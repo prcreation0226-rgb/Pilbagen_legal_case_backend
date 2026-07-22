@@ -5,7 +5,7 @@ const { protect } = require('../../middlewares/auth.middleware');
 const { authorize } = require('../../middlewares/role.middleware');
 
 router.use(protect);
-router.use(authorize('admin'));
+router.use(authorize('admin', 'partner'));
 
 router.post('/generate', reportsController.generateReport);
 router.get('/', reportsController.listReports);

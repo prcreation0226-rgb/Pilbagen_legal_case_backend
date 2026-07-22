@@ -816,4 +816,4 @@ async function cleanupInvalidMappings() {
 }
 
 // Trigger automatically on load
-cleanupInvalidMappings();
+// cleanupInvalidMappings();
