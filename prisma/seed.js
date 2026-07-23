@@ -6,6 +6,98 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Seeding database...');
 
+  // Create Default Agency and Office if not exist
+  const defaultAgency = await prisma.agency.upsert({
+    where: { email: 'default@vktori.com' },
+    update: {},
+    create: {
+      id: 1,
+      name: 'Default Agency',
+      owner: 'Victoria Admin',
+      email: 'default@vktori.com',
+      plan: 'Enterprise',
+      status: 'active',
+      subscription_amount: 1200.00
+    }
+  });
+
+  const defaultOffice = await prisma.office.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      id: 1,
+      name: 'Stockholm HQ',
+      agency_id: 1,
+      city: 'Stockholm',
+      status: 'active'
+    }
+  });
+
+  // Create Super Admin User
+  const superAdminPassword = await bcrypt.hash('1234', 10);
+  const superAdmin = await prisma.user.upsert({
+    where: { email: 'superadmin@vktori.com' },
+    update: { password_hash: superAdminPassword, role: 'admin' },
+    create: {
+      email: 'superadmin@vktori.com',
+      full_name: 'Pilbågen Super Admin',
+      password_hash: superAdminPassword,
+      role: 'admin',
+      agency_id: 1,
+      office_id: 1
+    },
+  });
+
+  await prisma.userRole.upsert({
+    where: { user_id_role: { user_id: superAdmin.id, role: 'super_admin' } },
+    update: {},
+    create: {
+      user_id: superAdmin.id,
+      role: 'super_admin',
+    },
+  });
+
+  // Seed sample agencies and offices for Super Admin
+  const sampleAgencies = [
+    { id: 101, name: 'Apex Legal Group', owner: 'Alexander Mercer', email: 'alex@apexlegal.se', plan: 'Professional', status: 'active', subscription_amount: 850.00 },
+    { id: 102, name: 'Vanguard Law Partners', owner: 'Sophia Lin', email: 'sophia@vanguardlaw.se', plan: 'Enterprise', status: 'active', subscription_amount: 1500.00 },
+    { id: 103, name: 'Beacon Civil Rights', owner: 'Marcus Vance', email: 'marcus@beaconcivil.se', plan: 'Basic', status: 'inactive', subscription_amount: 450.00 },
+  ];
+
+  for (const sa of sampleAgencies) {
+    await prisma.agency.upsert({
+      where: { email: sa.email },
+      update: {},
+      create: sa
+    });
+  }
+
+  const sampleOffices = [
+    { id: 101, name: 'Gothenburg Branch', agency_id: 101, city: 'Gothenburg', status: 'active' },
+    { id: 102, name: 'Malmö Office', agency_id: 102, city: 'Malmö', status: 'active' },
+    { id: 103, name: 'Uppsala Branch', agency_id: 103, city: 'Uppsala', status: 'inactive' },
+  ];
+
+  for (const so of sampleOffices) {
+    await prisma.office.upsert({
+      where: { id: so.id },
+      update: {},
+      create: so
+    });
+  }
+
+  // Seed sample platform activity logs
+  const logsCount = await prisma.activity.count({ where: { matter_id: null } });
+  if (logsCount === 0) {
+    await prisma.activity.createMany({
+      data: [
+        { actor_user_id: superAdmin.id, entity_type: 'Agency', entity_id: 101, action: 'CREATE', description: JSON.stringify({ message: 'Created Apex Legal Group agency', ip_address: '127.0.0.1', user_agent: 'Mozilla/5.0' }) },
+        { actor_user_id: superAdmin.id, entity_type: 'Office', entity_id: 101, action: 'CREATE', description: JSON.stringify({ message: 'Added Gothenburg Branch office', ip_address: '127.0.0.1', user_agent: 'Mozilla/5.0' }) },
+        { actor_user_id: superAdmin.id, entity_type: 'Settings', entity_id: 0, action: 'UPDATE', description: JSON.stringify({ message: 'Updated default system language to English', ip_address: '127.0.0.1', user_agent: 'Mozilla/5.0' }) },
+      ]
+    });
+  }
+
   // Create Admin User
   const adminPassword = await bcrypt.hash('1234', 10);
   const admin = await prisma.user.upsert({

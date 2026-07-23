@@ -36,7 +36,8 @@ const protect = async (req, res, next) => {
         role: true,
         agency_id: true,
         is_active: true,
-        roles: true
+        roles: true,
+        agency: { select: { id: true, name: true, owner: true, plan: true } }
       }
     });
 

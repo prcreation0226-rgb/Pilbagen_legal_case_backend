@@ -3,9 +3,11 @@ const billingService = require('../billing/billing.service');
 
 const canAccessMatter = (matter, user) => {
   if (!matter || !user) return false;
-  if (user.role === 'admin') return true;
-  if (user.role === 'lawyer') return matter.assigned_lawyer_id === user.id;
-  if (user.role === 'client') {
+  const userRoles = (user.roles || []).map(r => String(r.role || r).toLowerCase());
+  const primaryRole = String(user.role || '').toLowerCase();
+  if (primaryRole === 'admin' || primaryRole === 'paralegal' || primaryRole === 'partner' || userRoles.some(r => ['admin', 'paralegal', 'partner'].includes(r))) return true;
+  if (primaryRole === 'lawyer' || userRoles.includes('lawyer')) return matter.assigned_lawyer_id === user.id || matter.agency_id === user.agency_id;
+  if (primaryRole === 'client' || userRoles.includes('client')) {
     return matter.client?.user_id === user.id || (matter.parties && matter.parties.some(p => p.user_id === user.id));
   }
   return false;
@@ -156,13 +158,15 @@ const create = async (data, user) => {
     err.statusCode = 403;
     throw err;
   }
-  if (user?.role === 'lawyer') {
+  if (user?.role === 'lawyer' || (user?.roles && user.roles.includes('lawyer') && !user.roles.includes('admin'))) {
     if (data.assigned_lawyer_id && Number(data.assigned_lawyer_id) !== user.id) {
       const err = new Error('Lawyer can only create matters assigned to self');
-      err.statusCode = 403;
+      err.statusCode = 400;
       throw err;
     }
-    data.assigned_lawyer_id = user.id;
+    if (!data.assigned_lawyer_id) {
+      data.assigned_lawyer_id = user.id;
+    }
     data.created_by_user_id = user.id;
   }
 

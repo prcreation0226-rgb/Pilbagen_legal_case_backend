@@ -2,11 +2,36 @@ const prisma = require('../../config/db');
 const notificationsService = require('../notifications/notifications.service');
 const bcrypt = require('bcryptjs');
 
-const getAll = async (query) => {
+const getAll = async (query = {}, user) => {
+  const where = {};
+  const userRoles = (user?.roles || []).map(r => String(r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || user?.role === 'super_admin';
+
+  if (user?.agency_id && !isSuperAdmin) {
+    where.agency_id = parseInt(user.agency_id, 10);
+  }
+
+  if (query?.role && query.role !== 'all') {
+    where.roles = {
+      some: {
+        role: query.role.toLowerCase()
+      }
+    };
+  }
+
+  if (query?.q) {
+    where.OR = [
+      { full_name: { contains: query.q } },
+      { email: { contains: query.q } }
+    ];
+  }
+
   const users = await prisma.user.findMany({
+    where,
     include: {
       roles: true,
       lawyer: true,
+      agency: { select: { id: true, name: true } },
       _count: {
         select: { assigned_matters: true },
       },
@@ -42,30 +67,44 @@ const create = async (data) => {
   delete data.password;
   
   const { roles, practice_focus, ...userData } = data;
-  if (roles && roles.length > 0) {
-    userData.role = roles[0]; // Fallback for legacy column
-  }
+  if (userData.agency_id) userData.agency_id = parseInt(userData.agency_id, 10);
   
+  const validEnumRoles = ['admin', 'lawyer', 'client'];
+  const primaryRole = (roles && roles.length > 0) ? roles[0].toLowerCase() : (data.role ? data.role.toLowerCase() : 'client');
+  userData.role = validEnumRoles.includes(primaryRole) ? primaryRole : (['lawyer', 'partner', 'paralegal'].includes(primaryRole) ? 'lawyer' : 'admin');
+
   const user = await prisma.user.create({ data: userData });
 
-  if (roles && roles.length > 0) {
-    await prisma.userRole.createMany({
-      data: roles.map(r => ({ user_id: user.id, role: r }))
-    });
-  } else if (user.role) {
-    await prisma.userRole.create({
-      data: { user_id: user.id, role: user.role }
-    });
-  }
+  const roleArray = (roles && roles.length > 0) ? roles.map(r => r.toLowerCase()) : [primaryRole];
+  await prisma.userRole.createMany({
+    data: roleArray.map(r => ({ user_id: user.id, role: r }))
+  });
 
-  // Create Lawyer profile if roles includes lawyer
-  const resolvedRoles = roles || (user.role ? [user.role] : []);
-  if (resolvedRoles.includes('lawyer')) {
-    await prisma.lawyer.create({
-      data: {
+  // Create Lawyer profile if roles include lawyer, partner, or paralegal
+  if (roleArray.some(r => ['lawyer', 'partner', 'paralegal'].includes(r))) {
+    await prisma.lawyer.upsert({
+      where: { user_id: user.id },
+      update: { display_name: user.full_name, practice_focus: practice_focus || null },
+      create: {
         user_id: user.id,
         display_name: user.full_name,
         practice_focus: practice_focus || null,
+      }
+    });
+  }
+
+  // Create Client profile if client role
+  if (roleArray.includes('client')) {
+    await prisma.client.upsert({
+      where: { user_id: user.id },
+      update: { agency_id: user.agency_id || 1, full_name: user.full_name, email: user.email },
+      create: {
+        user_id: user.id,
+        agency_id: user.agency_id || 1,
+        full_name: user.full_name,
+        email: user.email,
+        party_role: 'Client',
+        party_type: 'Individual'
       }
     });
   }

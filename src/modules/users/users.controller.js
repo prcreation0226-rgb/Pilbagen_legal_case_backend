@@ -3,7 +3,7 @@ const { sendResponse } = require('../../utils/response');
 
 const getAll = async (req, res, next) => {
   try {
-    const data = await usersService.getAll(req.query);
+    const data = await usersService.getAll(req.query, req.user);
     res.status(200).json(sendResponse(true, 'Users fetched successfully', data));
   } catch (err) {
     next(err);
@@ -12,7 +12,7 @@ const getAll = async (req, res, next) => {
 
 const getById = async (req, res, next) => {
   try {
-    const data = await usersService.getById(req.params.id);
+    const data = await usersService.getById(req.params.id, req.user);
     res.status(200).json(sendResponse(true, 'User fetched successfully', data));
   } catch (err) {
     next(err);
@@ -21,6 +21,9 @@ const getById = async (req, res, next) => {
 
 const create = async (req, res, next) => {
   try {
+    if (!req.body.agency_id && req.user?.agency_id) {
+      req.body.agency_id = req.user.agency_id;
+    }
     const data = await usersService.create(req.body);
     res.status(201).json(sendResponse(true, 'User created successfully', data));
   } catch (err) {

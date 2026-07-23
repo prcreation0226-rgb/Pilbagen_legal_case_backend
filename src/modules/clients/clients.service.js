@@ -2,19 +2,22 @@ const prisma = require('../../config/db');
 const bcrypt = require('bcryptjs');
 
 const getAll = async (query, user) => {
-  const { page = 1, limit = 10 } = query;
+  const { page = 1, limit = 100 } = query;
   const take = parseInt(limit);
   const skip = (parseInt(page) - 1) * take;
 
+  const userRoles = (user?.roles || []).map(r => String(r).toLowerCase());
+  const isStaff = userRoles.some(r => ['admin', 'lawyer', 'partner', 'paralegal', 'super_admin'].includes(r)) || ['admin', 'lawyer'].includes(user?.role);
+
   const where = {};
-  if (user?.role === 'lawyer') {
-    where.matters = {
-      some: { assigned_lawyer_id: user.id },
-    };
+  if (user?.agency_id && !userRoles.includes('super_admin')) {
+    where.agency_id = parseInt(user.agency_id, 10);
   }
-  if (user?.role === 'client') {
+
+  if (userRoles.includes('client') && !isStaff) {
     where.user_id = user.id;
   }
+
   return await prisma.client.findMany({
     where,
     skip,
@@ -39,30 +42,28 @@ const getById = async (id, user) => {
     }
   });
   if (!client) return null;
-  if (user?.role === 'client' && client.user_id !== user.id) {
+
+  const userRoles = (user?.roles || []).map(r => String(r).toLowerCase());
+  if (userRoles.includes('client') && client.user_id !== user.id) {
     const err = new Error('Not authorized to access this client profile');
     err.statusCode = 403;
     throw err;
-  }
-  if (user?.role === 'lawyer') {
-    const hasAssigned = (client.matters || []).some((m) => m.assigned_lawyer_id === user.id);
-    if (!hasAssigned) {
-      const err = new Error('Not authorized to access this client');
-      err.statusCode = 403;
-      throw err;
-    }
   }
   return client;
 };
 
 const create = async (data, user) => {
-  if (user?.role !== 'admin') {
-    const err = new Error('Only admin can create clients');
+  const userRoles = (user?.roles || []).map(r => String(r).toLowerCase());
+  const canCreate = userRoles.some(r => ['admin', 'lawyer', 'partner', 'super_admin'].includes(r)) || ['admin', 'lawyer'].includes(user?.role);
+
+  if (!canCreate) {
+    const err = new Error('Not authorized to create clients');
     err.statusCode = 403;
     throw err;
   }
 
-  const { email, full_name, password, party_type, party_role, organization_name, contact_first_name, contact_last_name, business_address, home_address } = data;
+  const { email, full_name, password, party_type, party_role, organization_name, contact_first_name, contact_last_name, business_address, home_address, agency_id, ...rest } = data;
+  const targetAgencyId = agency_id ? parseInt(agency_id, 10) : (user?.agency_id ? parseInt(user.agency_id, 10) : 1);
 
   // 1. Check if user already exists
   let targetUser = await prisma.user.findUnique({ where: { email } });
@@ -77,18 +78,32 @@ const create = async (data, user) => {
         email,
         full_name,
         password_hash,
+        agency_id: targetAgencyId,
         role: 'client',
         must_reset_password: true,
       }
     });
+
+    await prisma.userRole.create({
+      data: { user_id: targetUser.id, role: 'client' }
+    });
   }
 
-  // 3. Create client linked to user
+  // 3. Create client linked to user and agency
   return await prisma.client.create({
     data: {
-      ...data,
+      email,
+      full_name,
+      party_type: party_type || 'Individual',
+      party_role: party_role || 'Client',
+      organization_name: organization_name || null,
+      contact_first_name: contact_first_name || null,
+      contact_last_name: contact_last_name || null,
+      business_address: business_address || null,
+      home_address: home_address || null,
+      agency_id: targetAgencyId,
       user_id: targetUser.id,
-      password: undefined, // ensure password isn't saved in client table
+      ...rest,
     },
     include: {
       user: {

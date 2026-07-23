@@ -3,16 +3,20 @@ const notificationsService = require('../notifications/notifications.service');
 
 const taskScope = (user) => {
   if (!user || user.role === 'admin') return {};
-  if (user.role === 'lawyer') {
+  const userRoles = (user.roles || []).map(r => String(r.role || r).toLowerCase());
+  const primaryRole = String(user.role || '').toLowerCase();
+  const isStaff = primaryRole === 'lawyer' || primaryRole === 'paralegal' || primaryRole === 'partner' ||
+    userRoles.some(r => ['lawyer', 'paralegal', 'partner'].includes(r));
+
+  if (isStaff) {
     return {
       OR: [
         { assigned_user_id: user.id },
         { created_by_user_id: user.id },
-        { matter: { assigned_lawyer_id: user.id } }
+        { matter: { agency_id: user.agency_id || 1 } }
       ]
     };
   }
-  // Clients shouldn't see internal tasks usually, but if needed:
   return { id: -1 };
 };
 
