@@ -8,7 +8,9 @@ const login = async (credentials) => {
   const user = await prisma.user.findUnique({ 
     where: { email },
     include: {
-      roles: true
+      roles: true,
+      agency: true,
+      office: true,
     }
   });
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {

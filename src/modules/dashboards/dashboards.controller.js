@@ -48,9 +48,29 @@ const getStats = async (req, res, next) => {
   }
 };
 
+const getPartnerDashboard = async (req, res, next) => {
+  try {
+    const data = await service.getPartnerDashboard(req.agency_id);
+    res.status(200).json(sendResponse(true, 'Partner dashboard fetched', data));
+  } catch (err) {
+    next(err);
+  }
+};
+
+const getParalegalDashboard = async (req, res, next) => {
+  try {
+    const data = await service.getParalegalDashboard(req.user.id, req.agency_id);
+    res.status(200).json(sendResponse(true, 'Paralegal dashboard fetched', data));
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getAdminDashboard,
   getLawyerDashboard,
   getClientDashboard,
   getStats,
+  getPartnerDashboard,
+  getParalegalDashboard,
 };

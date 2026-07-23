@@ -26,6 +26,7 @@ const searchRoutes = require('../modules/search/search.routes');
 const importRoutes = require('../modules/import/import.routes');
 const titanEmailRoutes = require('./titanEmail.routes');
 const fortnoxRoutes = require('./fortnox.routes');
+const superAdminRoutes = require('../modules/super-admin/super-admin.routes');
 
 const marketingController = require('../modules/marketing/marketing.controller');
 const { protect } = require('../middlewares/auth.middleware');
@@ -60,5 +61,6 @@ router.use('/notifications', notificationRoutes);
 router.use('/templates', templatesRoutes);
 router.use('/import', importRoutes);
 router.use('/titan-email', titanEmailRoutes);
+router.use('/super-admin', superAdminRoutes);
 
 module.exports = router;

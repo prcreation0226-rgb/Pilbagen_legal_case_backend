@@ -19,14 +19,14 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-router.get('/', protect, authorize('admin'), settingsController.getSettings);
-router.put('/', protect, authorize('admin'), settingsController.updateSettings);
+router.get('/', protect, authorize('admin', 'partner', 'lawyer'), settingsController.getSettings);
+router.put('/', protect, authorize('admin', 'partner', 'lawyer'), settingsController.updateSettings);
 
 router.get('/company-profile', protect, settingsController.getCompanyProfile);
-router.put('/company-profile', protect, authorize('admin'), settingsController.updateCompanyProfile);
-router.post('/company-profile/logo', protect, authorize('admin'), upload.single('logo'), settingsController.uploadLogo);
-router.delete('/company-profile/logo', protect, authorize('admin'), settingsController.removeLogo);
-router.post('/company-profile/letterhead', protect, authorize('admin'), upload.single('letterhead'), settingsController.uploadLetterhead);
-router.delete('/company-profile/letterhead', protect, authorize('admin'), settingsController.removeLetterhead);
+router.put('/company-profile', protect, authorize('admin', 'partner', 'lawyer'), settingsController.updateCompanyProfile);
+router.post('/company-profile/logo', protect, authorize('admin', 'partner', 'lawyer'), upload.single('logo'), settingsController.uploadLogo);
+router.delete('/company-profile/logo', protect, authorize('admin', 'partner', 'lawyer'), settingsController.removeLogo);
+router.post('/company-profile/letterhead', protect, authorize('admin', 'partner', 'lawyer'), upload.single('letterhead'), settingsController.uploadLetterhead);
+router.delete('/company-profile/letterhead', protect, authorize('admin', 'partner', 'lawyer'), settingsController.removeLetterhead);
 
 module.exports = router;

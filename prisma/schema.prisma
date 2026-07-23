@@ -75,14 +75,17 @@ model User {
   full_name     String
   email         String   @unique
   password_hash String
-  agency_id     Int      @default(1)
+  agency_id     Int?     @default(1)
   role          Role     @default(client)
   is_active     Boolean  @default(true)
   created_at    DateTime @default(now())
   updated_at    DateTime @updatedAt
   must_reset_password Boolean @default(false)
   last_login_at DateTime?
+  office_id     Int?
 
+  agency        Agency?    @relation(fields: [agency_id], references: [id])
+  office        Office?    @relation(fields: [office_id], references: [id])
   roles         UserRole[] @relation("UserRoles")
   client        Client?
   lawyer        Lawyer?
@@ -227,10 +230,12 @@ model Matter {
   created_at           DateTime     @default(now())
   updated_at           DateTime     @updatedAt
   next_hearing         DateTime?
+  office_id            Int?
 
   client               Client       @relation(fields: [client_id], references: [id])
   assigned_lawyer      User?        @relation("AssignedLawyer", fields: [assigned_lawyer_id], references: [id])
   created_by           User         @relation("CreatedBy", fields: [created_by_user_id], references: [id])
+  office               Office?      @relation(fields: [office_id], references: [id])
   parties              Client[]     @relation("matterparties")
   
   documents            Document[]
@@ -893,4 +898,44 @@ model GeneratedForm {
   creator       User              @relation(fields: [created_by], references: [id])
 
   @@map("generated_forms")
+}
+
+model Agency {
+  id                  Int      @id @default(autoincrement())
+  name                String
+  owner               String
+  email               String   @unique
+  phone               String?
+  plan                String   @default("Professional") // "Basic", "Professional", "Enterprise"
+  status              String   @default("active")       // "active", "inactive"
+  subscription_amount Decimal  @db.Decimal(10, 2) @default(0.00)
+  billing_cycle       String   @default("monthly")      // "monthly", "yearly"
+  next_billing        DateTime @default(now())
+  is_deleted          Boolean  @default(false)
+  deleted_at          DateTime?
+  created_at          DateTime @default(now())
+  updated_at          DateTime @updatedAt
+
+  offices             Office[]
+  users               User[]
+
+  @@map("agencies")
+}
+
+model Office {
+  id         Int      @id @default(autoincrement())
+  name       String
+  agency_id  Int
+  city       String
+  status     String   @default("active")       // "active", "inactive"
+  is_deleted Boolean  @default(false)
+  deleted_at DateTime?
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  agency     Agency   @relation(fields: [agency_id], references: [id], onDelete: Cascade)
+  users      User[]
+  matters    Matter[]
+
+  @@map("offices")
 }
