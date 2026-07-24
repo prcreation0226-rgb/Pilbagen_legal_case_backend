@@ -59,6 +59,7 @@ app.use('/api/tasks', require('./modules/tasks/tasks.routes'));
 app.use('/api/activities', require('./modules/activities/activities.routes'));
 app.use('/api/court-forms', require('./modules/court-forms/court-forms.routes'));
 app.use('/api/titan-email', require('./routes/titanEmail.routes'));
+app.use('/api/chat', require('./modules/chat/chat.routes'));
 
 // Error Handling
 app.use(errorHandler);

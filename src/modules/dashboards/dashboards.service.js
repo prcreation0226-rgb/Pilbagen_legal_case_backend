@@ -667,11 +667,7 @@ const getPartnerDashboard = async (agencyId) => {
     { id: 'kpi-1', label: 'Active Matters', value: String(activeMatters), change: `${activeMatters - completedMatters} net`, color: 'blue' },
     { id: 'kpi-2', label: 'Firm Matters', value: String(totalMatters), change: `Total: ${totalMatters}`, color: 'purple' },
     { id: 'kpi-3', label: 'Active Clients', value: String(totalClients), change: `Total registered`, color: 'emerald' },
-    { id: 'kpi-4', label: 'Associate Lawyers', value: `${totalTeam} staff`, change: 'Active staff', color: 'amber' },
     { id: 'kpi-5', label: 'Monthly Revenue', value: formatMoney(monthlyRevenue), change: 'This Month', color: 'emerald' },
-    { id: 'kpi-6', label: 'Billable Hours', value: `${billableHours}h`, change: 'Current Month', color: 'blue' },
-    { id: 'kpi-7', label: 'Pending Tasks', value: `${pendingTasks} items`, change: 'To-do', color: 'rose' },
-    { id: 'kpi-8', label: 'Upcoming Hearings', value: `${upcomingHearingsCount} upcoming`, change: '7 days', color: 'indigo' },
   ];
 
   return {

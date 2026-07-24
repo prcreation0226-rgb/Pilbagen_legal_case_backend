@@ -113,6 +113,8 @@ model User {
   signature             String? @db.Text
   generated_forms       GeneratedForm[]
   email_accounts        EmailAccount[]
+  chat_participants     ConversationParticipant[]
+  chat_messages         ChatMessage[]
 
   @@map("users")
 }
@@ -251,6 +253,7 @@ model Matter {
   trust_transactions   TrustTransaction[]
   tasks                Task[]
   generated_forms      GeneratedForm[]
+  conversations        Conversation[]
 
   @@map("matters")
 }
@@ -918,6 +921,7 @@ model Agency {
 
   offices             Office[]
   users               User[]
+  conversations       Conversation[]
 
   @@map("agencies")
 }
@@ -938,4 +942,59 @@ model Office {
   matters    Matter[]
 
   @@map("offices")
+}
+
+enum ConversationType {
+  private
+  group
+}
+
+model Conversation {
+  id           Int                     @id @default(autoincrement())
+  agency_id    Int                     @default(1)
+  title        String?
+  type         ConversationType        @default(private)
+  matter_id    Int?
+  created_at   DateTime                @default(now())
+  updated_at   DateTime                @updatedAt
+
+  agency       Agency                  @relation(fields: [agency_id], references: [id], onDelete: Cascade)
+  matter       Matter?                 @relation(fields: [matter_id], references: [id], onDelete: SetNull)
+  participants ConversationParticipant[]
+  messages     ChatMessage[]
+
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  id              Int          @id @default(autoincrement())
+  conversation_id Int
+  user_id         Int
+  last_read_at    DateTime?
+  created_at      DateTime     @default(now())
+
+  conversation    Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  user            User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([conversation_id, user_id])
+  @@map("conversation_participants")
+}
+
+model ChatMessage {
+  id              Int          @id @default(autoincrement())
+  conversation_id Int
+  sender_id       Int
+  agency_id       Int          @default(1)
+  encrypted_body  String       @db.Text
+  attachments     Json?
+  is_encrypted    Boolean      @default(true)
+  is_edited       Boolean      @default(false)
+  is_deleted      Boolean      @default(false)
+  created_at      DateTime     @default(now())
+  updated_at      DateTime     @updatedAt
+
+  conversation    Conversation @relation(fields: [conversation_id], references: [id], onDelete: Cascade)
+  sender          User         @relation(fields: [sender_id], references: [id], onDelete: Cascade)
+
+  @@map("chat_messages")
 }
