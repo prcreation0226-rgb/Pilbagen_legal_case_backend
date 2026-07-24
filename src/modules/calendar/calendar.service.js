@@ -2,12 +2,21 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const notificationsService = require('../notifications/notifications.service');
 
-exports.getAllEvents = async () => {
+exports.getAllEvents = async (user) => {
   const events = [];
+
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || String(user?.role || '').toLowerCase() === 'super_admin';
+  const agencyId = user?.agency_id ? parseInt(user.agency_id, 10) : null;
+
+  // Agency scope filters
+  const invoiceAgencyFilter = (!isSuperAdmin && agencyId) ? { agency_id: agencyId } : {};
+  const matterAgencyFilter = (!isSuperAdmin && agencyId) ? { agency_id: agencyId } : {};
+  const eventMatterFilter = (!isSuperAdmin && agencyId) ? { matter: { agency_id: agencyId } } : {};
 
   // 1. Invoice due
   const invoices = await prisma.invoice.findMany({
-    where: { due_date: { not: null } },
+    where: { due_date: { not: null }, ...invoiceAgencyFilter },
     select: { id: true, invoice_number: true, amount: true, due_date: true, status: true, description: true, matter: { select: { status: true } } }
   });
 
@@ -27,7 +36,7 @@ exports.getAllEvents = async () => {
 
   // 2. Matters
   const matters = await prisma.matter.findMany({
-    where: { status: { not: 'completed' } },
+    where: { status: { not: 'completed' }, ...matterAgencyFilter },
     select: { id: true, title: true, created_at: true, closed_at: true, updated_at: true, status: true, matter_number: true, description: true }
   });
 
@@ -45,7 +54,15 @@ exports.getAllEvents = async () => {
   });
 
   // 3. Manual events
+  const customWhere = (!isSuperAdmin && agencyId) ? {
+    OR: [
+      { matter: { agency_id: agencyId } },
+      { matter_id: null, created_by: { in: (await prisma.user.findMany({ where: { agency_id: agencyId }, select: { id: true } })).map(u => u.id) } }
+    ]
+  } : {};
+
   const custom = await prisma.calendarEvent.findMany({
+    where: customWhere,
     include: {
       matter: { select: { matter_number: true, title: true, status: true } },
       attendees: { include: { user: { select: { full_name: true, email: true } } } }

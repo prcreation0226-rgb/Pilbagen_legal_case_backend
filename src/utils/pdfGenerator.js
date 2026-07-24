@@ -9,7 +9,7 @@ exports.generateReportPDF = (report, res) => {
     size: 'A4',
     info: {
       Title: report.title,
-      Author: 'Victoria Tulsidas Law',
+      Author: 'Pilbågen System',
     }
   });
 
@@ -34,7 +34,7 @@ exports.generateReportPDF = (report, res) => {
   doc.fillColor(primaryColor)
      .font('Helvetica-Bold')
      .fontSize(20)
-     .text('VICTORIA TULSIDAS LAW', 50, 40, { width: 300 });
+     .text('Pilbågen System', 50, 40, { width: 300 });
   
   doc.fillColor(accentColor)
      .font('Helvetica')
@@ -105,7 +105,7 @@ exports.generateReportPDF = (report, res) => {
   const footerTop = 750;
   doc.rect(50, footerTop, 512, 1).fill(borderGray);
   doc.fillColor(textGray).fontSize(8).font('Helvetica-Oblique').text('CONFIDENTIAL FIRM DATA • FOR INTERNAL USE ONLY', 50, footerTop + 15, { align: 'center' });
-  doc.fillColor(textGray).fontSize(7).font('Helvetica').text(`Report ID: ${report.id} • Victoria Tulsidas Law Portal`, 50, footerTop + 30, { align: 'center' });
+  doc.fillColor(textGray).fontSize(7).font('Helvetica').text(`Report ID: ${report.id} • Pilbågen System Portal`, 50, footerTop + 30, { align: 'center' });
 
   doc.end();
 };

@@ -21,10 +21,12 @@ const getById = async (req, res, next) => {
 
 const create = async (req, res, next) => {
   try {
-    if (!req.body.agency_id && req.user?.agency_id) {
+    const userRoles = (req.user?.roles || []).map(r => String(r).toLowerCase());
+    const isSuperAdmin = userRoles.includes('super_admin') || req.user?.role === 'super_admin';
+    if (!isSuperAdmin && req.user?.agency_id) {
       req.body.agency_id = req.user.agency_id;
     }
-    const data = await usersService.create(req.body);
+    const data = await usersService.create(req.body, req.user);
     res.status(201).json(sendResponse(true, 'User created successfully', data));
   } catch (err) {
     next(err);
@@ -33,7 +35,7 @@ const create = async (req, res, next) => {
 
 const update = async (req, res, next) => {
   try {
-    const data = await usersService.update(req.params.id, req.body);
+    const data = await usersService.update(req.params.id, req.body, req.user);
     res.status(200).json(sendResponse(true, 'User updated successfully', data));
   } catch (err) {
     next(err);
@@ -46,7 +48,7 @@ const resetPassword = async (req, res, next) => {
     if (!newPassword || newPassword.length < 4) {
       return res.status(400).json(sendResponse(false, 'Password must be at least 4 characters'));
     }
-    await usersService.resetPassword(req.params.id, newPassword);
+    await usersService.resetPassword(req.params.id, newPassword, req.user);
     res.status(200).json(sendResponse(true, 'Password reset successfully'));
   } catch (err) {
     next(err);
@@ -59,7 +61,7 @@ const remove = async (req, res, next) => {
     if (req.user.id === targetId) {
       return res.status(400).json(sendResponse(false, 'You cannot delete your own account'));
     }
-    await usersService.remove(req.params.id);
+    await usersService.remove(req.params.id, req.user);
     res.status(200).json(sendResponse(true, 'User deleted successfully'));
   } catch (err) {
     next(err);

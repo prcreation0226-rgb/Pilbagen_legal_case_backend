@@ -246,8 +246,10 @@ async function fillFields(buffer, fieldValuesMap = {}, formData = {}) {
             // Lock fixed attorney details so they cannot be edited in the PDF
             if (sanitizedValue && (
                 sanitizedValue.includes('Victoria Tulsidas') || 
+                sanitizedValue.includes('Pilbågen System') || 
                 sanitizedValue.includes('365147') ||
                 sanitizedValue.includes('vtulsidas@victoriatulsidaslaw.com') ||
+                sanitizedValue.includes('support@pilbagen.se') ||
                 sanitizedValue.includes('750 San Vincente Blvd') ||
                 sanitizedValue === '90069' ||
                 sanitizedValue === '(310) 504-2359' ||

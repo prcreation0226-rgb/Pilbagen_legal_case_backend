@@ -21,7 +21,7 @@ exports.updateSettings = async (req, res, next) => {
 
 exports.getCompanyProfile = async (req, res, next) => {
   try {
-    const profile = await settingsService.getCompanyProfile();
+    const profile = await settingsService.getCompanyProfile(req.user);
     res.json(sendResponse(true, 'Company profile fetched', profile));
   } catch (err) {
     next(err);
@@ -30,7 +30,7 @@ exports.getCompanyProfile = async (req, res, next) => {
 
 exports.updateCompanyProfile = async (req, res, next) => {
   try {
-    const profile = await settingsService.updateCompanyProfile(req.body);
+    const profile = await settingsService.updateCompanyProfile(req.body, req.user);
     res.json(sendResponse(true, 'Company profile updated', profile));
   } catch (err) {
     next(err);
@@ -41,7 +41,7 @@ exports.uploadLogo = async (req, res, next) => {
   try {
     if (!req.file) throw new Error('No file uploaded');
     const url = `/uploads/company/${req.file.filename}`;
-    const profile = await settingsService.updateCompanyProfile({ logo_url: url });
+    const profile = await settingsService.updateCompanyProfile({ logo_url: url }, req.user);
     res.json(sendResponse(true, 'Logo uploaded', profile));
   } catch (err) {
     next(err);
@@ -52,7 +52,7 @@ exports.uploadLetterhead = async (req, res, next) => {
   try {
     if (!req.file) throw new Error('No file uploaded');
     const url = `/uploads/company/${req.file.filename}`;
-    const profile = await settingsService.updateCompanyProfile({ letterhead_url: url });
+    const profile = await settingsService.updateCompanyProfile({ letterhead_url: url }, req.user);
     res.json(sendResponse(true, 'Letterhead uploaded', profile));
   } catch (err) {
     next(err);
@@ -61,7 +61,7 @@ exports.uploadLetterhead = async (req, res, next) => {
 
 exports.removeLogo = async (req, res, next) => {
   try {
-    const profile = await settingsService.updateCompanyProfile({ logo_url: null });
+    const profile = await settingsService.updateCompanyProfile({ logo_url: null }, req.user);
     res.json(sendResponse(true, 'Logo removed', profile));
   } catch (err) {
     next(err);
@@ -70,7 +70,7 @@ exports.removeLogo = async (req, res, next) => {
 
 exports.removeLetterhead = async (req, res, next) => {
   try {
-    const profile = await settingsService.updateCompanyProfile({ letterhead_url: null });
+    const profile = await settingsService.updateCompanyProfile({ letterhead_url: null }, req.user);
     res.json(sendResponse(true, 'Letterhead removed', profile));
   } catch (err) {
     next(err);

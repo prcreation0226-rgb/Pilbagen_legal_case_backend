@@ -3,7 +3,7 @@ const { generateReportPDF } = require('../../utils/pdfGenerator');
 
 exports.generateReport = async (req, res, next) => {
   try {
-    const report = await reportsService.generate(req.user.id, req.body);
+    const report = await reportsService.generate(req.user.id, req.body, req.user);
     res.status(201).json({ data: report });
   } catch (error) {
     next(error);
@@ -12,7 +12,7 @@ exports.generateReport = async (req, res, next) => {
 
 exports.listReports = async (req, res, next) => {
   try {
-    const reports = await reportsService.list();
+    const reports = await reportsService.list(req.user);
     res.status(200).json({ data: reports });
   } catch (error) {
     next(error);
@@ -45,7 +45,7 @@ exports.downloadReport = async (req, res, next) => {
 
 exports.getMarketing = async (req, res, next) => {
   try {
-    const data = await reportsService.getMarketingStats();
+    const data = await reportsService.getMarketingStats(req.user);
     res.status(200).json({ data });
   } catch (error) {
     next(error);

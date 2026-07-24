@@ -47,7 +47,7 @@ app.use('/uploads', express.static('uploads'));
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ status: 'OK', message: 'VkTori Legal Backend is running' });
+  res.status(200).json({ status: 'OK', message: 'Pilbågen System Backend is running' });
 });
 
 // API Routes

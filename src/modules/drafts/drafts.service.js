@@ -8,12 +8,22 @@ const getAll = async (query, user) => {
   const take = parseInt(limit);
   const skip = (parseInt(page) - 1) * take;
 
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || String(user?.role || '').toLowerCase() === 'super_admin';
+
   const where = {};
   if (matter_id) where.matter_id = parseInt(matter_id);
   if (status) where.status = status;
-  if (user?.role === 'lawyer') where.matter = { assigned_lawyer_id: user.id };
+
+  // Agency scoping
+  if (!isSuperAdmin && user?.agency_id) {
+    where.matter = { ...where.matter, agency_id: parseInt(user.agency_id, 10) };
+  }
+
+  if (user?.role === 'lawyer') where.matter = { ...where.matter, assigned_lawyer_id: user.id };
   if (user?.role === 'client') {
     where.matter = {
+      ...where.matter,
       OR: [
         { client: { user_id: user.id } },
         { parties: { some: { user_id: user.id } } }

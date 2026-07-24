@@ -8,13 +8,16 @@ async function main() {
 
   // Create Default Agency and Office if not exist
   const defaultAgency = await prisma.agency.upsert({
-    where: { email: 'default@vktori.com' },
-    update: {},
+    where: { id: 1 },
+    update: {
+      owner: 'Pilbågen Admin',
+      email: 'default@pilbagen.se',
+    },
     create: {
       id: 1,
       name: 'Default Agency',
-      owner: 'Victoria Admin',
-      email: 'default@vktori.com',
+      owner: 'Pilbågen Admin',
+      email: 'default@pilbagen.se',
       plan: 'Enterprise',
       status: 'active',
       subscription_amount: 1200.00
@@ -36,10 +39,10 @@ async function main() {
   // Create Super Admin User
   const superAdminPassword = await bcrypt.hash('1234', 10);
   const superAdmin = await prisma.user.upsert({
-    where: { email: 'superadmin@vktori.com' },
+    where: { email: 'superadmin@pilbagen.se' },
     update: { password_hash: superAdminPassword, role: 'admin' },
     create: {
-      email: 'superadmin@vktori.com',
+      email: 'superadmin@pilbagen.se',
       full_name: 'Pilbågen Super Admin',
       password_hash: superAdminPassword,
       role: 'admin',
@@ -101,11 +104,11 @@ async function main() {
   // Create Admin User
   const adminPassword = await bcrypt.hash('1234', 10);
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@vktori.com' },
+    where: { email: 'admin@pilbagen.se' },
     update: { password_hash: adminPassword, role: 'admin' },
     create: {
-      email: 'admin@vktori.com',
-      full_name: 'Victoria Admin',
+      email: 'admin@pilbagen.se',
+      full_name: 'Pilbågen Admin',
       password_hash: adminPassword,
       role: 'admin',
     },
@@ -116,10 +119,10 @@ async function main() {
   // Create a Lawyer
   const lawyerPassword = await bcrypt.hash('1234', 10);
   const lawyerUser = await prisma.user.upsert({
-    where: { email: 'lawyer@vktori.com' },
+    where: { email: 'lawyer@pilbagen.se' },
     update: { password_hash: lawyerPassword, role: 'lawyer' },
     create: {
-      email: 'lawyer@vktori.com',
+      email: 'lawyer@pilbagen.se',
       full_name: 'Lawyer John',
       password_hash: lawyerPassword,
       role: 'lawyer',
@@ -141,10 +144,10 @@ async function main() {
   // Create a Client User
   const clientPassword = await bcrypt.hash('1234', 10);
   const clientUser = await prisma.user.upsert({
-    where: { email: 'client@vktori.com' },
+    where: { email: 'client@pilbagen.se' },
     update: { password_hash: clientPassword, role: 'client' },
     create: {
-      email: 'client@vktori.com',
+      email: 'client@pilbagen.se',
       full_name: 'Sarah Client',
       password_hash: clientPassword,
       role: 'client',
@@ -157,7 +160,7 @@ async function main() {
     create: {
       user_id: clientUser.id,
       full_name: 'Sarah Client',
-      email: 'client@vktori.com',
+      email: 'client@pilbagen.se',
       is_portal_enabled: true
     },
   });

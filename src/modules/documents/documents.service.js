@@ -4,10 +4,18 @@ const fs = require('fs');
 const path = require('path');
 const { extractTextFromFile, generateSnippet } = require('../../services/documentTextExtractor');
 
+const isSuperAdmin = (user) => {
+  const roles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  return roles.includes('super_admin') || String(user?.role || '').toLowerCase() === 'super_admin';
+};
+
 const documentScope = (user) => {
-  if (!user || user.role === 'admin') return {};
-  if (user.role === 'lawyer') return { matter: { assigned_lawyer_id: user.id } };
+  if (!user) return {};
+  const agencyFilter = (!isSuperAdmin(user) && user.agency_id) ? { agency_id: parseInt(user.agency_id, 10) } : {};
+  if (isSuperAdmin(user) || user.role === 'admin') return agencyFilter;
+  if (user.role === 'lawyer') return { ...agencyFilter, matter: { assigned_lawyer_id: user.id } };
   return {
+    ...agencyFilter,
     matter: {
       OR: [
         { client: { user_id: user.id } },
@@ -20,6 +28,9 @@ const documentScope = (user) => {
 
 const ensureDocumentAccess = async (doc, user) => {
   if (!doc) return false;
+  if (isSuperAdmin(user)) return true;
+  // Agency check
+  if (user?.agency_id && doc.agency_id && doc.agency_id !== parseInt(user.agency_id, 10)) return false;
   if (!user || user.role === 'admin') return true;
   if (user.role === 'lawyer') {
     const ok = await prisma.matter.count({ where: { id: doc.matter_id, assigned_lawyer_id: user.id } });
@@ -102,6 +113,9 @@ const getById = async (id, user) => {
 
 const create = async (data, user) => {
   const payload = { ...data };
+  if (!isSuperAdmin(user) && user?.agency_id) {
+    payload.agency_id = parseInt(user.agency_id, 10);
+  }
   if (payload.matter_id !== undefined) payload.matter_id = parseInt(payload.matter_id, 10);
   if (payload.uploaded_by_user_id !== undefined) payload.uploaded_by_user_id = parseInt(payload.uploaded_by_user_id, 10);
   if (user?.role === 'lawyer') {
@@ -283,6 +297,11 @@ const update = async (id, data, user) => {
     err.statusCode = 404;
     throw err;
   }
+  if (!isSuperAdmin(user) && user?.agency_id && existing.agency_id !== parseInt(user.agency_id, 10)) {
+    const err = new Error('Not authorized to access or update document from another agency');
+    err.statusCode = 403;
+    throw err;
+  }
   if (user?.role === 'lawyer') {
     const allowed = await prisma.matter.count({
       where: { id: existing.matter_id, assigned_lawyer_id: user.id },
@@ -302,6 +321,17 @@ const update = async (id, data, user) => {
 const remove = async (id, user) => {
   if (user?.role !== 'admin') {
     const err = new Error('Only admin can delete documents');
+    err.statusCode = 403;
+    throw err;
+  }
+  const existing = await prisma.document.findUnique({ where: { id: parseInt(id, 10) } });
+  if (!existing) {
+    const err = new Error('Document not found');
+    err.statusCode = 404;
+    throw err;
+  }
+  if (!isSuperAdmin(user) && user?.agency_id && existing.agency_id !== parseInt(user.agency_id, 10)) {
+    const err = new Error('Not authorized to delete document from another agency');
     err.statusCode = 403;
     throw err;
   }

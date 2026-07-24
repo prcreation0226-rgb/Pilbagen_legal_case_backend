@@ -3,7 +3,7 @@ const Papa = require('papaparse');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-exports.processClioMatterImport = async (filePath, dryRun, userId) => {
+exports.processClioMatterImport = async (filePath, dryRun, userId, user) => {
   return new Promise((resolve, reject) => {
     try {
       const fileContent = fs.readFileSync(filePath, 'utf8');
@@ -12,7 +12,7 @@ exports.processClioMatterImport = async (filePath, dryRun, userId) => {
         skipEmptyLines: true,
         complete: async (results) => {
           try {
-            const report = await processRows(results.data, dryRun, userId);
+            const report = await processRows(results.data, dryRun, userId, user);
             resolve(report);
           } catch (error) {
             reject(error);
@@ -28,7 +28,7 @@ exports.processClioMatterImport = async (filePath, dryRun, userId) => {
   });
 };
 
-async function processRows(rows, dryRun, userId) {
+async function processRows(rows, dryRun, userId, user) {
   const report = {
     success: true,
     imported: 0,
@@ -41,6 +41,12 @@ async function processRows(rows, dryRun, userId) {
     warnings: [],
     errors: []
   };
+
+  const importingUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { agency_id: true }
+  });
+  const targetAgencyId = user?.agency_id ? parseInt(user.agency_id, 10) : (importingUser?.agency_id || 1);
 
   const unsupportedCustomFieldsSet = new Set();
   const autoCreatedPracticeAreasSet = new Set();
@@ -62,7 +68,7 @@ async function processRows(rows, dryRun, userId) {
       }
 
       client = await prisma.client.findFirst({
-        where: { full_name: clientName }
+        where: { full_name: clientName, agency_id: targetAgencyId }
       });
 
       if (!client) {
@@ -72,7 +78,8 @@ async function processRows(rows, dryRun, userId) {
               full_name: clientName,
               email: `${clientName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase() || 'client'}@placeholder.local`,
               party_type: 'Individual',
-              party_role: 'Client'
+              party_role: 'Client',
+              agency_id: targetAgencyId
             }
           });
         } else {
@@ -109,6 +116,7 @@ async function processRows(rows, dryRun, userId) {
         const lawyer = await prisma.user.findFirst({
           where: {
             full_name: respAttorney,
+            agency_id: targetAgencyId,
             role: { in: ['lawyer', 'admin'] }
           }
         });
@@ -153,7 +161,8 @@ async function processRows(rows, dryRun, userId) {
         closed_at: closedAt,
         created_at: createdAt,
         updated_at: updatedAt,
-        created_by_user_id: userId
+        created_by_user_id: userId,
+        agency_id: targetAgencyId
       };
 
       // --- 5. Duplicate Detection ---

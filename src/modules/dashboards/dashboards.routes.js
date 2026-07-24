@@ -11,5 +11,7 @@ router.get('/lawyer', protect, authorize('lawyer'), controller.getLawyerDashboar
 router.get('/client', protect, authorize('client'), controller.getClientDashboard);
 
 router.get('/stats', protect, controller.getStats);
+router.get('/back-office', protect, authorize('admin', 'partner'), controller.getBackOffice);
+router.post('/back-office/vendors', protect, authorize('admin', 'partner'), controller.addBackOfficeVendor);
 
 module.exports = router;

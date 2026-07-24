@@ -1,20 +1,31 @@
 const prisma = require('../../config/db');
 
+const isSuperAdminUser = (user) => {
+  const roles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  return roles.includes('super_admin') || String(user?.role || '').toLowerCase() === 'super_admin';
+};
+
 const getAll = async (query, user) => {
   const { category, page = 1, limit = 50 } = query;
   const take = parseInt(limit);
   const skip = (parseInt(page) - 1) * take;
 
+  const isSuper = isSuperAdminUser(user);
+  const agencyId = (!isSuper && user?.agency_id) ? parseInt(user.agency_id, 10) : null;
+
   const where = {};
   if (category) where.category = category;
-  if (user?.role !== 'admin') where.is_active = true;
+  if (user?.role !== 'admin' && !isSuper) where.is_active = true;
+  if (agencyId) {
+    where.created_by = { agency_id: agencyId };
+  }
 
   return await prisma.template.findMany({
     where,
     skip,
     take,
     include: {
-      created_by: { select: { id: true, full_name: true } }
+      created_by: { select: { id: true, full_name: true, agency_id: true } }
     },
     orderBy: { created_at: 'desc' },
   });
@@ -24,12 +35,17 @@ const getById = async (id, user) => {
   const template = await prisma.template.findUnique({
     where: { id: parseInt(id) },
     include: {
-      created_by: { select: { id: true, full_name: true } }
+      created_by: { select: { id: true, full_name: true, agency_id: true } }
     }
   });
   if (!template) {
     const err = new Error('Template not found');
     err.statusCode = 404;
+    throw err;
+  }
+  if (!isSuperAdminUser(user) && user?.agency_id && template.created_by?.agency_id !== parseInt(user.agency_id, 10)) {
+    const err = new Error('Not authorized to access template from another agency');
+    err.statusCode = 403;
     throw err;
   }
   return template;
@@ -51,6 +67,7 @@ const update = async (id, data, user) => {
     err.statusCode = 403;
     throw err;
   }
+  const existing = await getById(id, user);
   return await prisma.template.update({
     where: { id: parseInt(id) },
     data,
@@ -63,6 +80,7 @@ const remove = async (id, user) => {
     err.statusCode = 403;
     throw err;
   }
+  const existing = await getById(id, user);
   return await prisma.template.delete({ where: { id: parseInt(id) } });
 };
 

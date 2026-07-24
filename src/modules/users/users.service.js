@@ -7,8 +7,13 @@ const getAll = async (query = {}, user) => {
   const userRoles = (user?.roles || []).map(r => String(r).toLowerCase());
   const isSuperAdmin = userRoles.includes('super_admin') || user?.role === 'super_admin';
 
-  if (user?.agency_id && !isSuperAdmin) {
-    where.agency_id = parseInt(user.agency_id, 10);
+  if (!isSuperAdmin) {
+    if (user?.agency_id) {
+      where.agency_id = parseInt(user.agency_id, 10);
+    }
+    where.NOT = [
+      { roles: { some: { role: { in: ['super_admin', 'superadmin'] } } } }
+    ];
   }
 
   if (query?.role && query.role !== 'all') {
@@ -61,13 +66,33 @@ const getById = async (id) => {
   return { ...rest, roles: userRoles, practice_focus: lawyer?.practice_focus || null };
 };
 
-const create = async (data) => {
+const create = async (data, currentUser) => {
   const salt = await bcrypt.genSalt(10);
   data.password_hash = await bcrypt.hash(data.password, salt);
   delete data.password;
   
   const { roles, practice_focus, ...userData } = data;
-  if (userData.agency_id) userData.agency_id = parseInt(userData.agency_id, 10);
+  
+  if (userData.email) {
+    const existingUser = await prisma.user.findFirst({
+      where: { email: userData.email.trim() }
+    });
+    if (existingUser) {
+      const err = new Error(`Email address "${userData.email}" is already registered to another user.`);
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  const userRoles = (currentUser?.roles || []).map(r => String(r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || currentUser?.role === 'super_admin';
+  if (!isSuperAdmin && currentUser?.agency_id) {
+    userData.agency_id = parseInt(currentUser.agency_id, 10);
+  } else if (userData.agency_id) {
+    userData.agency_id = parseInt(userData.agency_id, 10);
+  } else {
+    userData.agency_id = 1;
+  }
   
   const validEnumRoles = ['admin', 'lawyer', 'client'];
   const primaryRole = (roles && roles.length > 0) ? roles[0].toLowerCase() : (data.role ? data.role.toLowerCase() : 'client');
@@ -115,10 +140,10 @@ const create = async (data) => {
   });
 
   if (!createdUser) return null;
-  const userRoles = createdUser.roles?.length > 0 ? createdUser.roles.map(r => r.role) : [createdUser.role];
+  const createdUserRoles = createdUser.roles?.length > 0 ? createdUser.roles.map(r => r.role) : [createdUser.role];
   const { password_hash, roles: _, lawyer, ...rest } = createdUser;
 
-  if (userRoles.includes('client')) {
+  if (createdUserRoles.includes('client')) {
     const admins = await prisma.user.findMany({
       where: { roles: { some: { role: 'admin' } } },
       select: { id: true }
@@ -135,10 +160,26 @@ const create = async (data) => {
     }
   }
 
-  return { ...rest, roles: userRoles, practice_focus: lawyer?.practice_focus || null };
+  return { ...rest, roles: createdUserRoles, practice_focus: lawyer?.practice_focus || null };
 };
 
-const update = async (id, data) => {
+const update = async (id, data, currentUser) => {
+  const targetId = parseInt(id, 10);
+  const targetUser = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!targetUser) {
+    const err = new Error('User not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const userRoles = (currentUser?.roles || []).map(r => String(r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || currentUser?.role === 'super_admin';
+  if (!isSuperAdmin && currentUser?.agency_id && targetUser.agency_id !== currentUser.agency_id) {
+    const err = new Error('Not authorized to modify this user');
+    err.statusCode = 403;
+    throw err;
+  }
+
   if (data.password) {
     const salt = await bcrypt.genSalt(10);
     data.password_hash = await bcrypt.hash(data.password, salt);
@@ -146,38 +187,62 @@ const update = async (id, data) => {
   }
   
   const { roles, practice_focus, ...userData } = data;
-  if (roles && roles.length > 0) {
-    userData.role = roles[0];
+
+  if (userData.email && userData.email.trim().toLowerCase() !== targetUser.email.toLowerCase()) {
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        email: userData.email.trim(),
+        id: { not: targetId }
+      }
+    });
+    if (existingUser) {
+      const err = new Error(`Email address "${userData.email}" is already registered to another user.`);
+      err.statusCode = 400;
+      throw err;
+    }
   }
-  
+
+  const validEnumRoles = ['admin', 'lawyer', 'client'];
+  if (roles && roles.length > 0) {
+    const primaryRole = roles[0].toLowerCase();
+    userData.role = validEnumRoles.includes(primaryRole)
+      ? primaryRole
+      : (['lawyer', 'partner', 'paralegal'].includes(primaryRole) ? 'lawyer' : 'admin');
+  } else if (userData.role) {
+    const primaryRole = userData.role.toLowerCase();
+    userData.role = validEnumRoles.includes(primaryRole)
+      ? primaryRole
+      : (['lawyer', 'partner', 'paralegal'].includes(primaryRole) ? 'lawyer' : 'admin');
+  }
+
   await prisma.user.update({
-    where: { id: parseInt(id) },
+    where: { id: targetId },
     data: userData,
   });
 
   if (roles) {
     await prisma.userRole.deleteMany({
-      where: { user_id: parseInt(id) }
+      where: { user_id: targetId }
     });
     if (roles.length > 0) {
       await prisma.userRole.createMany({
-        data: roles.map(r => ({ user_id: parseInt(id), role: r }))
+        data: roles.map(r => ({ user_id: targetId, role: r.toLowerCase() }))
       });
     }
   }
 
-  // Upsert Lawyer profile if roles includes lawyer
-  const resolvedRoles = roles || [];
-  if (resolvedRoles.includes('lawyer')) {
+  // Upsert Lawyer profile if roles include lawyer, partner, or paralegal
+  const resolvedRoles = (roles || []).map(r => r.toLowerCase());
+  if (resolvedRoles.some(r => ['lawyer', 'partner', 'paralegal'].includes(r))) {
     await prisma.lawyer.upsert({
-      where: { user_id: parseInt(id) },
+      where: { user_id: targetId },
       update: {
-        display_name: userData.full_name || "",
+        display_name: userData.full_name || targetUser.full_name || "",
         practice_focus: practice_focus || null,
       },
       create: {
-        user_id: parseInt(id),
-        display_name: userData.full_name || "",
+        user_id: targetId,
+        display_name: userData.full_name || targetUser.full_name || "",
         practice_focus: practice_focus || null,
       }
     });
@@ -189,12 +254,28 @@ const update = async (id, data) => {
   });
 
   if (!updatedUser) return null;
-  const userRoles = updatedUser.roles?.length > 0 ? updatedUser.roles.map(r => r.role) : [updatedUser.role];
+  const updatedUserRoles = updatedUser.roles?.length > 0 ? updatedUser.roles.map(r => r.role) : [updatedUser.role];
   const { password_hash, roles: _, lawyer, ...rest } = updatedUser;
-  return { ...rest, roles: userRoles, practice_focus: lawyer?.practice_focus || null };
+  return { ...rest, roles: updatedUserRoles, practice_focus: lawyer?.practice_focus || null };
 };
 
-const resetPassword = async (id, newPassword) => {
+const resetPassword = async (id, newPassword, currentUser) => {
+  const targetId = parseInt(id, 10);
+  const targetUser = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!targetUser) {
+    const err = new Error('User not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const userRoles = (currentUser?.roles || []).map(r => String(r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || currentUser?.role === 'super_admin';
+  if (!isSuperAdmin && currentUser?.agency_id && targetUser.agency_id !== currentUser.agency_id) {
+    const err = new Error('Not authorized to reset password for this user');
+    err.statusCode = 403;
+    throw err;
+  }
+
   if (!newPassword || newPassword.length < 4) {
     const error = new Error('Password must be at least 4 characters');
     error.statusCode = 400;
@@ -203,7 +284,7 @@ const resetPassword = async (id, newPassword) => {
   const salt = await bcrypt.genSalt(10);
   const password_hash = await bcrypt.hash(newPassword, salt);
   await prisma.user.update({
-    where: { id: parseInt(id) },
+    where: { id: targetId },
     data: {
       password_hash,
       must_reset_password: false,
@@ -212,7 +293,7 @@ const resetPassword = async (id, newPassword) => {
   return { success: true };
 };
 
-const remove = async (id) => {
+const remove = async (id, currentUser) => {
   const userId = parseInt(id);
 
   // 1. Fetch user to ensure they exist
@@ -221,6 +302,14 @@ const remove = async (id) => {
     include: { client: true }
   });
   if (!targetUser) return null;
+
+  const userRoles = (currentUser?.roles || []).map(r => String(r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || currentUser?.role === 'super_admin';
+  if (!isSuperAdmin && currentUser?.agency_id && targetUser.agency_id !== currentUser.agency_id) {
+    const err = new Error('Not authorized to delete this user');
+    err.statusCode = 403;
+    throw err;
+  }
 
   // 2. Fetch all drafts created/updated by this user, or referencing their matters
   const userDrafts = await prisma.draft.findMany({
@@ -259,8 +348,6 @@ const remove = async (id) => {
     const matterIds = clientMatters.map(m => m.id);
 
     if (matterIds.length > 0) {
-      // Delete conflict checks
-      await prisma.conflictCheck.deleteMany({ where: { matter_id: { in: matterIds } } });
       // Delete time entries
       await prisma.timeEntry.deleteMany({ where: { matter_id: { in: matterIds } } });
       // Delete tasks
@@ -346,11 +433,26 @@ const remove = async (id) => {
   // Delete trust transactions
   await prisma.trustTransaction.deleteMany({ where: { created_by_user_id: userId } });
 
-  // Nullify created matters/assigned matters references
-  await prisma.matter.updateMany({
-    where: { created_by_user_id: userId },
-    data: { created_by_user_id: 1 } // Safe fallback to Admin user (ID 1)
+  // Reassign or clean up created matters references safely
+  const fallbackUser = await prisma.user.findFirst({
+    where: {
+      id: { not: userId },
+      roles: { some: { role: 'admin' } }
+    }
+  }) || await prisma.user.findFirst({
+    where: { id: { not: userId } }
   });
+
+  if (fallbackUser) {
+    await prisma.matter.updateMany({
+      where: { created_by_user_id: userId },
+      data: { created_by_user_id: fallbackUser.id }
+    });
+  } else {
+    await prisma.matter.deleteMany({
+      where: { created_by_user_id: userId }
+    });
+  }
   await prisma.matter.updateMany({
     where: { assigned_lawyer_id: userId },
     data: { assigned_lawyer_id: null }

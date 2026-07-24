@@ -90,7 +90,7 @@ async function buildInvoicePdfBuffer(invoice) {
         doc.fillColor(primaryColor)
            .font('Helvetica-Bold')
            .fontSize(20)
-           .text('VICTORIA TULSIDAS LAW', 50, 40, { width: 300 });
+           .text('Pilbågen System', 50, 40, { width: 300 });
         
         doc.fillColor(accentColor)
            .font('Helvetica')
@@ -245,8 +245,8 @@ async function buildInvoicePdfBuffer(invoice) {
       // --- Footer ---
       const footerTop = Math.max(currentSumY + 40, 730);
       doc.save().lineWidth(0.75).strokeColor(borderGray).moveTo(50, footerTop).lineTo(562, footerTop).stroke().restore();
-      doc.fillColor(textGray).fontSize(8).font('Helvetica').text('Legal Services rendered by ' + (company.company_name || 'Victoria Tulsidas Law') + '. All amounts are in USD.', 50, footerTop + 12, { align: 'center', width: 512 });
-      doc.text('This is a computer generated document. Securely managed via VkTori Portal.', 50, doc.y + 2, { align: 'center', width: 512 });
+      doc.fillColor(textGray).fontSize(8).font('Helvetica').text('Legal Services rendered by ' + (company.company_name || 'Pilbågen System') + '. All amounts are in USD.', 50, footerTop + 12, { align: 'center', width: 512 });
+      doc.text('This is a computer generated document. Securely managed via Pilbågen System Portal.', 50, doc.y + 2, { align: 'center', width: 512 });
 
       doc.end();
     } catch (err) {
@@ -257,6 +257,11 @@ async function buildInvoicePdfBuffer(invoice) {
 
 const ensureInvoiceAccess = async (invoice, user) => {
   if (!invoice || !user) return false;
+  const userRoles = (user.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || user?.role === 'super_admin';
+  if (!isSuperAdmin && user.agency_id && invoice.agency_id !== user.agency_id) {
+    return false;
+  }
   if (user.role === 'admin') return true;
   if (user.role === 'lawyer') {
     const ok = await prisma.matter.count({ where: { id: invoice.matter_id, assigned_lawyer_id: user.id } });
@@ -312,6 +317,11 @@ const getAll = async (query, user) => {
   const skip = (parseInt(page) - 1) * take;
 
   const where = {};
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || user?.role === 'super_admin';
+  if (!isSuperAdmin && user?.agency_id) {
+    where.agency_id = parseInt(user.agency_id, 10);
+  }
   if (matter_id) where.matter_id = parseInt(matter_id);
   if (query.client_id) {
     where.matter = { ...where.matter, client_id: parseInt(query.client_id) };
@@ -414,7 +424,7 @@ const getInvoicePdf = async (id, user) => {
 async function buildInvoiceDocxBuffer(invoice) {
   const company = (await prisma.companyProfile.findFirst()) || {};
 
-  const companyName = company.company_name || 'VICTORIA TULSIDAS LAW';
+  const companyName = company.company_name || 'Pilbågen System';
   const companyAddress = company.address || 'A PROFESSIONAL LEGAL CORPORATION';
   const companyPhone = company.phone || '';
   const companyEmail = company.email || '';

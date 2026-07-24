@@ -169,8 +169,13 @@ exports.getTemplateById = async (id) => {
   });
 };
 
+const isSuperAdminUser = (user) => {
+  const roles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  return roles.includes('super_admin') || String(user?.role || '').toLowerCase() === 'super_admin';
+};
+
 // ── PREFILL DATA ASSEMBLY ────────────────────────────────────
-exports.prefillForMatter = async (matterId) => {
+exports.prefillForMatter = async (matterId, user) => {
   const matter = await prisma.matter.findUnique({
     where: { id: parseInt(matterId) },
     include: {
@@ -186,8 +191,13 @@ exports.prefillForMatter = async (matterId) => {
   });
 
   if (!matter) throw new Error('Matter not found');
+  if (!isSuperAdminUser(user) && user?.agency_id && matter.agency_id !== parseInt(user.agency_id, 10)) {
+    throw new Error('Not authorized to access matter from another agency');
+  }
 
-  const companyProfile = await prisma.companyProfile.findFirst();
+  const companyProfile = await prisma.companyProfile.findFirst({
+    where: { id: user?.agency_id ? parseInt(user.agency_id, 10) : 1 }
+  }) || await prisma.companyProfile.findFirst();
 
   const nextHearing = matter.calendar_events.find(
     (e) => e.type === 'hearing' || e.type === 'court_date',
@@ -221,16 +231,16 @@ exports.prefillForMatter = async (matterId) => {
   ].filter(Boolean).join(', ');
 
   return {
-    attorney_name: 'Victoria Tulsidas, Esq.',
+    attorney_name: 'Pilbågen System',
     'Atty Bar No': '365147',
-    attorney_email: 'vtulsidas@victoriatulsidaslaw.com',
-    firm_name: 'Victoria Tulsidas Law, A Professional Legal Corporation',
+    attorney_email: 'support@pilbagen.se',
+    firm_name: 'Pilbågen System',
     firm_address: '750 San Vincente Blvd, Suite 800 West',
     firm_city: 'West Hollywood',
     firm_state: 'CA',
     firm_zip: '90069',
     firm_phone: '(310) 504-2359',
-    firm_email: 'vtulsidas@victoriatulsidaslaw.com',
+    firm_email: 'support@pilbagen.se',
     client_name: matter.client?.full_name || '',
     client_address: clientAddr,
     client_phone: matter.client?.phone || '',
@@ -269,9 +279,15 @@ exports.createDraft = async (data, userId) => {
   });
 };
 
-exports.updateDraft = async (id, data, userId) => {
-  const form = await prisma.generatedForm.findUnique({ where: { id: parseInt(id) } });
+exports.updateDraft = async (id, data, userId, user) => {
+  const form = await prisma.generatedForm.findUnique({
+    where: { id: parseInt(id) },
+    include: { matter: { select: { agency_id: true } } }
+  });
   if (!form) throw new Error('Form draft not found');
+  if (!isSuperAdminUser(user) && user?.agency_id && form.matter?.agency_id !== parseInt(user.agency_id, 10)) {
+    throw new Error('Not authorized to update form draft from another agency');
+  }
   return prisma.generatedForm.update({
     where: { id: parseInt(id) },
     data: {
@@ -282,15 +298,26 @@ exports.updateDraft = async (id, data, userId) => {
   });
 };
 
-exports.deleteDraft = async (id) => {
-  const form = await prisma.generatedForm.findUnique({ where: { id: parseInt(id) } });
+exports.deleteDraft = async (id, user) => {
+  const form = await prisma.generatedForm.findUnique({
+    where: { id: parseInt(id) },
+    include: { matter: { select: { agency_id: true } } }
+  });
   if (!form) throw new Error('Form draft not found');
+  if (!isSuperAdminUser(user) && user?.agency_id && form.matter?.agency_id !== parseInt(user.agency_id, 10)) {
+    throw new Error('Not authorized to delete form draft from another agency');
+  }
   return prisma.generatedForm.delete({ where: { id: parseInt(id) } });
 };
 
-exports.getDraftsByMatter = async (matterId) => {
+exports.getDraftsByMatter = async (matterId, user) => {
+  const agencyId = (!isSuperAdminUser(user) && user?.agency_id) ? parseInt(user.agency_id, 10) : null;
+  const where = { matter_id: parseInt(matterId) };
+  if (agencyId) {
+    where.matter = { agency_id: agencyId };
+  }
   return prisma.generatedForm.findMany({
-    where: { matter_id: parseInt(matterId) },
+    where,
     include: {
       template: { select: { form_number: true, title: true } },
       creator: { select: { full_name: true } },
@@ -299,11 +326,17 @@ exports.getDraftsByMatter = async (matterId) => {
   });
 };
 
-exports.getAllDrafts = async (query = {}) => {
+exports.getAllDrafts = async (query = {}, user) => {
   const { matter_id, status } = query;
+  const agencyId = (!isSuperAdminUser(user) && user?.agency_id) ? parseInt(user.agency_id, 10) : null;
+
   const where = {};
   if (matter_id) where.matter_id = parseInt(matter_id);
   if (status) where.status = status;
+  if (agencyId) {
+    where.matter = { ...where.matter, agency_id: agencyId };
+  }
+
   return prisma.generatedForm.findMany({
     where,
     include: {
@@ -316,13 +349,12 @@ exports.getAllDrafts = async (query = {}) => {
 };
 
 // ── PDF GENERATION ───────────────────────────────────────────
-exports.generatePdf = async (draftIdRaw, overrides = {}) => {
+exports.generatePdf = async (draftIdRaw, overrides = {}, user) => {
   const draftId = Number.parseInt(draftIdRaw, 10);
   if (Number.isNaN(draftId)) {
     throw new Error('Invalid draft ID');
   }
 
-//   console.log('[PDF_GENERATION] Starting PDF generation for Draft ID:', draftId);
   const form = await prisma.generatedForm.findUnique({
     where: { id: draftId },
     include: {
@@ -333,6 +365,9 @@ exports.generatePdf = async (draftIdRaw, overrides = {}) => {
   if (!form) {
     console.error('[PDF_GENERATION] Error: Form draft not found for ID', draftId);
     throw new Error('Form draft not found');
+  }
+  if (!isSuperAdminUser(user) && user?.agency_id && form.matter?.agency_id !== parseInt(user.agency_id, 10)) {
+    throw new Error('Not authorized to access form draft from another agency');
   }
 
   const formData = { ...(form.form_data || {}), ...(overrides.form_data || overrides.formValues || {}) };
