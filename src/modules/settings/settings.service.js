@@ -29,24 +29,25 @@ exports.update = async (data) => {
 };
 
 /**
- * Fetches the centralized Company Profile.
+ * Fetches the Agency Company Profile.
  */
-exports.getCompanyProfile = async () => {
-  const profile = await prisma.companyProfile.findFirst({
-    where: { id: 1 }
+exports.getCompanyProfile = async (user) => {
+  const targetId = user?.agency_id ? parseInt(user.agency_id, 10) : 1;
+  const profile = await prisma.companyProfile.findUnique({
+    where: { id: targetId }
   });
   return profile || {};
 };
 
 /**
- * Updates the centralized Company Profile.
+ * Updates the Agency Company Profile.
  */
-exports.updateCompanyProfile = async (data) => {
-  console.log("updateCompanyProfile received data:", data);
+exports.updateCompanyProfile = async (data, user) => {
+  const targetId = user?.agency_id ? parseInt(user.agency_id, 10) : 1;
   const { id, created_at, updated_at, ...updateData } = data;
   return await prisma.companyProfile.upsert({
-    where: { id: 1 },
+    where: { id: targetId },
     update: updateData,
-    create: { id: 1, ...updateData }
+    create: { id: targetId, ...updateData }
   });
 };

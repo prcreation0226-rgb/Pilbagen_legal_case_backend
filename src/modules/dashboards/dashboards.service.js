@@ -23,7 +23,7 @@ const relTime = (d) => {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 };
 
-const getAdminDashboard = async () => {
+const getAdminDashboard = async (agencyId = 1) => {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
   const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
@@ -51,29 +51,38 @@ const getAdminDashboard = async () => {
     upcomingFilingDeadlines,
     eventsToday,
   ] = await Promise.all([
-    prisma.lead.count(),
-    prisma.client.count(),
-    prisma.matter.count(),
-    prisma.matter.count({ where: { status: 'active' } }),
-    prisma.matter.count({ where: { status: 'pending' } }),
-    prisma.matter.count({ where: { status: 'completed' } }),
-    prisma.user.count({ where: { role: 'lawyer', is_active: true } }),
-    prisma.invoice.count({ where: { status: { in: ['unpaid', 'draft', 'due'] } } }),
-    prisma.invoice.count({ where: { status: 'overdue' } }),
+    prisma.lead.count({ where: { agency_id: agencyId } }),
+    prisma.client.count({ where: { agency_id: agencyId } }),
+    prisma.matter.count({ where: { agency_id: agencyId } }),
+    prisma.matter.count({ where: { agency_id: agencyId, status: 'active' } }),
+    prisma.matter.count({ where: { agency_id: agencyId, status: 'pending' } }),
+    prisma.matter.count({ where: { agency_id: agencyId, status: 'completed' } }),
+    prisma.user.count({ where: { agency_id: agencyId, role: 'lawyer', is_active: true } }),
+    prisma.invoice.count({ where: { agency_id: agencyId, status: { in: ['unpaid', 'draft', 'due'] } } }),
+    prisma.invoice.count({ where: { agency_id: agencyId, status: 'overdue' } }),
     prisma.draft.count({
-      where: { status: { in: ['draft', 'ready', 'sent_for_signature'] } },
+      where: { matter: { agency_id: agencyId }, status: { in: ['draft', 'ready', 'sent_for_signature'] } },
     }),
-    prisma.document.count(),
-    prisma.communication.count(),
+    prisma.document.count({ where: { agency_id: agencyId } }),
+    prisma.communication.count({
+      where: {
+        OR: [
+          { matter: { agency_id: agencyId } },
+          { sender: { agency_id: agencyId } }
+        ]
+      }
+    }),
     prisma.invoice.count({
       where: {
+        agency_id: agencyId,
         due_date: { gte: now, lte: deadlineHorizon },
         status: { in: ['unpaid', 'overdue', 'draft', 'due'] },
       },
     }),
-    prisma.task.count({ where: { status: { in: ['open', 'in_progress'] } } }),
+    prisma.task.count({ where: { OR: [ { matter: { agency_id: agencyId } }, { created_by: { agency_id: agencyId } } ], status: { in: ['open', 'in_progress'] } } }),
     prisma.task.count({
       where: {
+        OR: [ { matter: { agency_id: agencyId } }, { created_by: { agency_id: agencyId } } ],
         due_date: {
           gte: new Date(now.setHours(0,0,0,0)),
           lte: new Date(now.setHours(23,59,59,999))
@@ -83,12 +92,14 @@ const getAdminDashboard = async () => {
     }),
     prisma.task.count({
       where: {
+        OR: [ { matter: { agency_id: agencyId } }, { created_by: { agency_id: agencyId } } ],
         due_date: { lt: new Date(now.setHours(0,0,0,0)) },
         status: { not: 'completed' }
       }
     }),
     prisma.task.count({
       where: {
+        OR: [ { matter: { agency_id: agencyId } }, { created_by: { agency_id: agencyId } } ],
         status: 'completed',
         completed_at: {
           gte: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
@@ -97,18 +108,21 @@ const getAdminDashboard = async () => {
     }),
     prisma.calendarEvent.count({
       where: {
+        matter: { agency_id: agencyId },
         is_court_event: true,
         event_date: { gte: now }
       }
     }),
     prisma.calendarEvent.count({
       where: {
+        matter: { agency_id: agencyId },
         type: 'filing_deadline',
         event_date: { gte: now }
       }
     }),
     prisma.calendarEvent.count({
       where: {
+        matter: { agency_id: agencyId },
         is_court_event: true,
         event_date: {
           gte: new Date(new Date(now).setDate(now.getDate() - now.getDay())),
@@ -121,6 +135,7 @@ const getAdminDashboard = async () => {
   const paymentsThisMonth = await prisma.payment.findMany({
     where: {
       paid_on: { gte: monthStart, lte: monthEnd },
+      matter: { agency_id: agencyId }
     },
     include: {
       invoice: {
@@ -150,18 +165,21 @@ const getAdminDashboard = async () => {
     .sort((a, b) => b.amount - a.amount);
 
   const recentMatters = await prisma.matter.findMany({
+    where: { agency_id: agencyId },
     take: 5,
     orderBy: { updated_at: 'desc' },
     include: { client: { select: { full_name: true } } },
   });
 
   const recentLeads = await prisma.lead.findMany({
+    where: { agency_id: agencyId },
     take: 5,
     orderBy: { created_at: 'desc' },
   });
 
   const upcomingInvoices = await prisma.invoice.findMany({
     where: {
+      agency_id: agencyId,
       due_date: { gte: now },
       status: { in: ['unpaid', 'overdue', 'draft'] },
     },
@@ -183,6 +201,12 @@ const getAdminDashboard = async () => {
   });
 
   const activities = await prisma.activity.findMany({
+    where: {
+      OR: [
+        { matter: { agency_id: agencyId } },
+        { actor: { agency_id: agencyId } }
+      ]
+    },
     take: 12,
     orderBy: { created_at: 'desc' },
     include: {
@@ -581,6 +605,47 @@ const getPartnerDashboard = async (agencyId) => {
     }
   });
 
+  // Dynamic average duration of completed matters
+  const completedMattersList = await prisma.matter.findMany({
+    where: { agency_id: agencyId, status: 'completed', closed_at: { not: null }, opened_at: { not: null } },
+    select: { opened_at: true, closed_at: true }
+  });
+  let calculatedAvgDuration = '0 Months';
+  if (completedMattersList.length > 0) {
+    const totalDurationMs = completedMattersList.reduce((acc, m) => {
+      return acc + (m.closed_at.getTime() - m.opened_at.getTime());
+    }, 0);
+    const avgMs = totalDurationMs / completedMattersList.length;
+    const avgMonths = Math.round((avgMs / (30 * 24 * 60 * 60 * 1000)) * 10) / 10;
+    calculatedAvgDuration = `${avgMonths} Months`;
+  }
+
+  // Dynamic success rate based on completed matters / (completed + active)
+  let calculatedSuccessRate = '100%';
+  if (completedMatters + activeMatters > 0) {
+    const rate = Math.round((completedMatters / (completedMatters + activeMatters)) * 100);
+    calculatedSuccessRate = `${rate}%`;
+  }
+
+  // Dynamic realization rate: total payments paid / total invoices amount
+  const invoices = await prisma.invoice.findMany({
+    where: { agency_id: agencyId },
+    select: { amount: true, payments: { select: { amount: true } } }
+  });
+  let calculatedRealizationRate = '100%';
+  if (invoices.length > 0) {
+    let totalBilledAmount = 0;
+    let totalPaidAmount = 0;
+    for (const inv of invoices) {
+      totalBilledAmount += money(inv.amount);
+      totalPaidAmount += inv.payments.reduce((sum, p) => sum + money(p.amount), 0);
+    }
+    if (totalBilledAmount > 0) {
+      const rate = Math.round((totalPaidAmount / totalBilledAmount) * 100);
+      calculatedRealizationRate = `${rate}%`;
+    }
+  }
+
   const activeFirmMatters = agencyMatters.map(m => {
     const totalBilled = m.payments.reduce((acc, p) => acc + money(p.amount), 0);
     return {
@@ -591,7 +656,7 @@ const getPartnerDashboard = async (agencyId) => {
       practice_area: m.practice_area,
       lead_attorney: m.assigned_lawyer?.full_name || 'Unassigned',
       associate: 'N/A',
-      est_value: formatMoney(totalBilled * 1.5 || 50000),
+      est_value: formatMoney(totalBilled),
       next_court_date: m.next_hearing ? m.next_hearing.toISOString().split('T')[0] : 'N/A',
       status: m.status
     };
@@ -612,9 +677,9 @@ const getPartnerDashboard = async (agencyId) => {
   return {
     kpis,
     firmPerformance: {
-      avgDuration: '4.2 Months',
-      successRate: '95%',
-      realizationRate: '98%',
+      avgDuration: calculatedAvgDuration,
+      successRate: calculatedSuccessRate,
+      realizationRate: calculatedRealizationRate,
       practiceAreas
     },
     teamPerformance,
@@ -671,7 +736,7 @@ const getParalegalDashboard = async (userId, agencyId) => {
     }),
     prisma.timeEntry.findMany({
       where: {
-        created_by_user_id: userId,
+        user_id: userId,
         created_at: { gte: monthStart, lte: monthEnd }
       },
       select: { duration_minutes: true }
@@ -757,10 +822,118 @@ const getParalegalDashboard = async (userId, agencyId) => {
   };
 };
 
+const getBackOfficeData = async (agencyId = 1) => {
+  const targetAgencyId = parseInt(agencyId, 10) || 1;
+
+  // 1. Fetch real offices for this agency
+  const offices = await prisma.office.findMany({
+    where: { agency_id: targetAgencyId },
+    include: {
+      _count: {
+        select: { users: true, matters: true }
+      }
+    }
+  });
+
+  let formattedOffices = [];
+  if (offices.length > 0) {
+    formattedOffices = offices.map(o => ({
+      id: o.id,
+      name: o.name,
+      address: o.city || 'Branch Office',
+      staffCount: o._count?.users || 0,
+      mattersCount: o._count?.matters || 0,
+      status: o.status || 'active'
+    }));
+  } else {
+    const agency = await prisma.agency.findUnique({ where: { id: targetAgencyId } });
+    const agencyUserCount = await prisma.user.count({ where: { agency_id: targetAgencyId, is_active: true } });
+    const agencyMatterCount = await prisma.matter.count({ where: { agency_id: targetAgencyId } });
+    formattedOffices = [{
+      id: 1,
+      name: `${agency?.name || 'Agency'} Headquarters`,
+      address: 'Main Office',
+      staffCount: agencyUserCount,
+      mattersCount: agencyMatterCount,
+      status: 'active'
+    }];
+  }
+
+  // 2. Fetch total staff count
+  const totalStaff = await prisma.user.count({ where: { agency_id: targetAgencyId, is_active: true } });
+
+  // 3. Fetch vendors for this agency from Setting table (key: `back_office_vendors_${targetAgencyId}`)
+  const settingKey = `back_office_vendors_${targetAgencyId}`;
+  const vendorSetting = await prisma.setting.findUnique({ where: { key: settingKey } });
+  let vendors = [];
+  if (vendorSetting && vendorSetting.value) {
+    try {
+      vendors = JSON.parse(vendorSetting.value);
+    } catch(e) {
+      vendors = [];
+    }
+  }
+
+  // Calculate monthly expenses dynamically
+  const totalMonthlyExpenses = vendors.reduce((sum, v) => {
+    const costNum = parseFloat(String(v.monthlyCost || '').replace(/[^0-9.]/g, '')) || 0;
+    return sum + costNum;
+  }, 0);
+
+  const locationsCount = formattedOffices.length;
+
+  return {
+    metrics: {
+      monthlyExpenses: `$${totalMonthlyExpenses.toLocaleString()}`,
+      locationsCount: `${locationsCount} ${locationsCount === 1 ? 'Location' : 'Locations'}`,
+      staffCount: `${totalStaff} Staff`,
+      overhead: totalStaff > 0 ? `${(totalMonthlyExpenses / (totalStaff * 1000) * 100).toFixed(1)}%` : '0%'
+    },
+    offices: formattedOffices,
+    vendors: vendors
+  };
+};
+
+const addBackOfficeVendor = async (agencyId = 1, vendorData = {}) => {
+  const targetAgencyId = parseInt(agencyId, 10) || 1;
+  const settingKey = `back_office_vendors_${targetAgencyId}`;
+  const vendorSetting = await prisma.setting.findUnique({ where: { key: settingKey } });
+  let vendors = [];
+  if (vendorSetting && vendorSetting.value) {
+    try {
+      vendors = JSON.parse(vendorSetting.value);
+    } catch(e) {
+      vendors = [];
+    }
+  }
+
+  const newVendor = {
+    id: `VND-${vendors.length + 101}`,
+    name: vendorData.name,
+    category: vendorData.category || 'Legal Database',
+    monthlyCost: vendorData.monthlyCost ? (vendorData.monthlyCost.startsWith('$') ? vendorData.monthlyCost : `$${vendorData.monthlyCost}`) : '$0',
+    status: 'active',
+    contact: vendorData.contact || 'contact@vendor.com',
+    created_at: new Date()
+  };
+
+  vendors.unshift(newVendor);
+
+  await prisma.setting.upsert({
+    where: { key: settingKey },
+    update: { value: JSON.stringify(vendors) },
+    create: { key: settingKey, value: JSON.stringify(vendors) }
+  });
+
+  return newVendor;
+};
+
 module.exports = {
   getAdminDashboard,
   getLawyerStats,
   getClientStats,
   getPartnerDashboard,
   getParalegalDashboard,
+  getBackOfficeData,
+  addBackOfficeVendor,
 };

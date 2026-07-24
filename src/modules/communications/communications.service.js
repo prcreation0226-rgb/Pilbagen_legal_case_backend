@@ -2,10 +2,15 @@ const prisma = require('../../config/db');
 const notificationsService = require('../notifications/notifications.service');
 
 const communicationScope = (user) => {
-  if (!user || user.role === 'admin') return {};
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || String(user?.role || '').toLowerCase() === 'super_admin';
+  const agencyMatterFilter = (!isSuperAdmin && user?.agency_id) ? { matter: { agency_id: parseInt(user.agency_id, 10) } } : {};
+
+  if (!user || isSuperAdmin) return {};
+  if (user.role === 'admin') return agencyMatterFilter;
   if (user.role === 'lawyer') {
     return { 
-      matter: { assigned_lawyer_id: user.id } 
+      matter: { assigned_lawyer_id: user.id, ...(user.agency_id ? { agency_id: parseInt(user.agency_id, 10) } : {}) } 
     };
   }
   if (user.role === 'client') {

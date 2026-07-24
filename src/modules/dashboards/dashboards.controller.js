@@ -3,7 +3,7 @@ const { sendResponse } = require('../../utils/response');
 
 const getAdminDashboard = async (req, res, next) => {
   try {
-    const data = await service.getAdminDashboard();
+    const data = await service.getAdminDashboard(req.agency_id);
     res.status(200).json(sendResponse(true, 'Admin dashboard fetched', data));
   } catch (err) {
     next(err);
@@ -35,7 +35,7 @@ const getStats = async (req, res, next) => {
     const { role, id } = req.user;
 
     if (role === 'admin') {
-      data = await service.getAdminDashboard();
+      data = await service.getAdminDashboard(req.agency_id);
     } else if (role === 'lawyer') {
       data = await service.getLawyerStats(id);
     } else if (role === 'client') {
@@ -66,6 +66,24 @@ const getParalegalDashboard = async (req, res, next) => {
   }
 };
 
+const getBackOffice = async (req, res, next) => {
+  try {
+    const data = await service.getBackOfficeData(req.agency_id);
+    res.status(200).json(sendResponse(true, 'Back Office data fetched', data));
+  } catch (err) {
+    next(err);
+  }
+};
+
+const addBackOfficeVendor = async (req, res, next) => {
+  try {
+    const data = await service.addBackOfficeVendor(req.agency_id, req.body);
+    res.status(201).json(sendResponse(true, 'Vendor contract added successfully', data));
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getAdminDashboard,
   getLawyerDashboard,
@@ -73,4 +91,6 @@ module.exports = {
   getStats,
   getPartnerDashboard,
   getParalegalDashboard,
+  getBackOffice,
+  addBackOfficeVendor,
 };

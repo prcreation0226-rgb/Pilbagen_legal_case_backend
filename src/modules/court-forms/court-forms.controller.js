@@ -35,7 +35,7 @@ exports.prefill = async (req, res) => {
     if (!matter_id) {
       return res.status(400).json({ error: 'matter_id is required' });
     }
-    const data = await courtFormsService.prefillForMatter(matter_id);
+    const data = await courtFormsService.prefillForMatter(matter_id, req.user);
     res.json({ data });
   } catch (e) {
     console.error('[COURT_FORMS] Error prefilling matter:', e.message);
@@ -49,7 +49,7 @@ exports.prefill = async (req, res) => {
 // GET /api/court-forms/drafts
 exports.getAllDrafts = async (req, res) => {
   try {
-    const drafts = await courtFormsService.getAllDrafts(req.query);
+    const drafts = await courtFormsService.getAllDrafts(req.query, req.user);
     res.json({ data: drafts });
   } catch (e) {
     console.error('[COURT_FORMS] Error getting drafts:', e.message);
@@ -71,7 +71,7 @@ exports.createDraft = async (req, res) => {
 // PUT /api/court-forms/drafts/:id
 exports.updateDraft = async (req, res) => {
   try {
-    const draft = await courtFormsService.updateDraft(req.params.id, req.body, req.user.id);
+    const draft = await courtFormsService.updateDraft(req.params.id, req.body, req.user.id, req.user);
     res.json({ data: draft });
   } catch (e) {
     console.error('[COURT_FORMS] Error updating draft:', e.message);
@@ -85,7 +85,7 @@ exports.updateDraft = async (req, res) => {
 // DELETE /api/court-forms/drafts/:id
 exports.deleteDraft = async (req, res) => {
   try {
-    await courtFormsService.deleteDraft(req.params.id);
+    await courtFormsService.deleteDraft(req.params.id, req.user);
     res.json({ message: 'Draft deleted' });
   } catch (e) {
     console.error('[COURT_FORMS] Error deleting draft:', e.message);
@@ -103,7 +103,7 @@ exports.generatePdf = async (req, res) => {
     if (Number.isNaN(draftId)) {
       return res.status(400).json({ error: 'Invalid draft ID' });
     }
-    const { fileName, filePath, pdfBytes } = await courtFormsService.generatePdf(req.params.id, req.body);
+    const { fileName, filePath, pdfBytes } = await courtFormsService.generatePdf(req.params.id, req.body, req.user);
     const buffer = Buffer.from(pdfBytes);
     let sha256 = '';
     try {

@@ -5,6 +5,10 @@ const canAccessMatter = (matter, user) => {
   if (!matter || !user) return false;
   const userRoles = (user.roles || []).map(r => String(r.role || r).toLowerCase());
   const primaryRole = String(user.role || '').toLowerCase();
+  const isSuperAdmin = userRoles.includes('super_admin') || primaryRole === 'super_admin';
+  if (!isSuperAdmin && user.agency_id && matter.agency_id !== user.agency_id) {
+    return false;
+  }
   if (primaryRole === 'admin' || primaryRole === 'paralegal' || primaryRole === 'partner' || userRoles.some(r => ['admin', 'paralegal', 'partner'].includes(r))) return true;
   if (primaryRole === 'lawyer' || userRoles.includes('lawyer')) return matter.assigned_lawyer_id === user.id || matter.agency_id === user.agency_id;
   if (primaryRole === 'client' || userRoles.includes('client')) {
@@ -24,6 +28,11 @@ const getAll = async (query, user) => {
   const skip = (parseInt(page) - 1) * take;
 
   const where = {};
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || user?.role === 'super_admin';
+  if (!isSuperAdmin && user?.agency_id) {
+    where.agency_id = parseInt(user.agency_id, 10);
+  }
   if (status) where.status = status;
   if (client_id) where.client_id = parseInt(client_id);
   if (lawyer_id) where.assigned_lawyer_id = parseInt(lawyer_id);
@@ -171,6 +180,14 @@ const create = async (data, user) => {
   }
 
   const { custom_fields, clientIds, clientId, ...payload } = data;
+
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || user?.role === 'super_admin';
+  if (!isSuperAdmin && user?.agency_id) {
+    payload.agency_id = parseInt(user.agency_id, 10);
+  } else if (!payload.agency_id) {
+    payload.agency_id = 1;
+  }
 
   let idsToConnect = [];
   if (clientIds && Array.isArray(clientIds) && clientIds.length > 0) {

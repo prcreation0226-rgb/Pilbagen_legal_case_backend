@@ -9,7 +9,8 @@ const check = async (req, res, next) => {
     const result = await service.checkConflict({ 
       prospectiveClient: prospective_client_name, 
       opposingParty: opposing_party_name,
-      userId 
+      userId,
+      user: req.user
     });
 
     res.status(200).json(sendResponse(true, result.message, result));
@@ -20,7 +21,7 @@ const check = async (req, res, next) => {
 
 const getAll = async (req, res, next) => {
   try {
-    const data = await service.getAll(req.query);
+    const data = await service.getAll(req.query, req.user);
     res.status(200).json(sendResponse(true, 'Conflicts fetched successfully', data));
   } catch (err) {
     next(err);

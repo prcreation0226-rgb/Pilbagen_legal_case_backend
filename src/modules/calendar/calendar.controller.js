@@ -2,7 +2,7 @@ const calendarService = require('./calendar.service');
 
 exports.getEvents = async (req, res, next) => {
   try {
-    const data = await calendarService.getAllEvents();
+    const data = await calendarService.getAllEvents(req.user);
     res.status(200).json({ data });
   } catch (error) {
     next(error);

@@ -2,22 +2,21 @@ const prisma = require('../../config/db');
 const notificationsService = require('../notifications/notifications.service');
 
 const taskScope = (user) => {
-  if (!user || user.role === 'admin') return {};
+  if (!user) return { id: -1 };
   const userRoles = (user.roles || []).map(r => String(r.role || r).toLowerCase());
   const primaryRole = String(user.role || '').toLowerCase();
-  const isStaff = primaryRole === 'lawyer' || primaryRole === 'paralegal' || primaryRole === 'partner' ||
-    userRoles.some(r => ['lawyer', 'paralegal', 'partner'].includes(r));
+  const isSuperAdmin = userRoles.includes('super_admin') || primaryRole === 'super_admin';
 
-  if (isStaff) {
-    return {
-      OR: [
-        { assigned_user_id: user.id },
-        { created_by_user_id: user.id },
-        { matter: { agency_id: user.agency_id || 1 } }
-      ]
-    };
-  }
-  return { id: -1 };
+  if (isSuperAdmin) return {};
+
+  const agencyId = user.agency_id || 1;
+  return {
+    OR: [
+      { assigned_user: { agency_id: agencyId } },
+      { created_by: { agency_id: agencyId } },
+      { matter: { agency_id: agencyId } }
+    ]
+  };
 };
 
 const getAll = async (query, user) => {
@@ -83,6 +82,22 @@ const create = async (data, user) => {
     reminder_date: data.reminder_date ? new Date(data.reminder_date) : null,
     created_by_user_id: user.id
   };
+
+  if (payload.matter_id) {
+    const matter = await prisma.matter.findUnique({ where: { id: payload.matter_id } });
+    if (!matter) {
+      const err = new Error('Matter not found');
+      err.statusCode = 404;
+      throw err;
+    }
+    const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+    const isSuperAdmin = userRoles.includes('super_admin') || user?.role === 'super_admin';
+    if (!isSuperAdmin && user?.agency_id && matter.agency_id !== user.agency_id) {
+      const err = new Error('Not authorized to access this matter');
+      err.statusCode = 403;
+      throw err;
+    }
+  }
 
   const task = await prisma.task.create({ data: payload });
 

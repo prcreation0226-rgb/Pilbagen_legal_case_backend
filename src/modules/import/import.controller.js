@@ -11,7 +11,7 @@ exports.importClioMatters = async (req, res, next) => {
 
     const filePath = req.file.path;
 
-    const report = await processClioMatterImport(filePath, dryRun, userId);
+    const report = await processClioMatterImport(filePath, dryRun, userId, req.user);
 
     res.status(200).json(report);
   } catch (error) {

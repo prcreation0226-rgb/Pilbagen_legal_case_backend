@@ -6,10 +6,9 @@ const searchAll = async (q, user) => {
   if (!q || q.trim().length < 2) return [];
   const query = q.trim();
 
-  // Define standard search for different roles
-  // Admin: matters, clients, documents, leads, drafts
-  // Lawyer: matters (assigned), clients, documents (of assigned matters), leads, drafts
-  // Client: matters (own), documents (own/shared), drafts (sent for signature)
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || String(user?.role || '').toLowerCase() === 'super_admin';
+  const agencyId = (!isSuperAdmin && user?.agency_id) ? parseInt(user.agency_id, 10) : null;
 
   const results = [];
 
@@ -21,6 +20,7 @@ const searchAll = async (q, user) => {
       { description: { contains: query } },
     ]
   };
+  if (agencyId) matterWhere.agency_id = agencyId;
   if (user.role === 'lawyer') matterWhere.assigned_lawyer_id = user.id;
   if (user.role === 'client') {
     matterWhere.OR = [
@@ -44,14 +44,17 @@ const searchAll = async (q, user) => {
 
   // 2. Search Clients (Admin/Lawyer only)
   if (user.role !== 'client') {
+    const clientWhere = {
+      OR: [
+        { full_name: { contains: query } },
+        { email: { contains: query } },
+        { phone: { contains: query } },
+      ]
+    };
+    if (agencyId) clientWhere.agency_id = agencyId;
+
     const clients = await prisma.client.findMany({
-      where: {
-        OR: [
-          { full_name: { contains: query } },
-          { email: { contains: query } },
-          { phone: { contains: query } },
-        ]
-      },
+      where: clientWhere,
       take: 5,
       select: { id: true, full_name: true, email: true }
     });
@@ -66,14 +69,17 @@ const searchAll = async (q, user) => {
 
   // 3. Search Leads (Admin/Lawyer only)
   if (user.role !== 'client') {
+    const leadWhere = {
+      OR: [
+        { full_name: { contains: query } },
+        { email: { contains: query } },
+        { phone: { contains: query } },
+      ]
+    };
+    if (agencyId) leadWhere.agency_id = agencyId;
+
     const leads = await prisma.lead.findMany({
-      where: {
-        OR: [
-          { full_name: { contains: query } },
-          { email: { contains: query } },
-          { phone: { contains: query } },
-        ]
-      },
+      where: leadWhere,
       take: 5,
       select: { id: true, full_name: true, email: true }
     });
@@ -96,6 +102,7 @@ const searchAll = async (q, user) => {
       { extracted_text: { contains: query } },
     ]
   };
+  if (agencyId) docWhere.agency_id = agencyId;
   if (user.role === 'lawyer') docWhere.matter = { assigned_lawyer_id: user.id };
   if (user.role === 'client') {
     docWhere.matter = {

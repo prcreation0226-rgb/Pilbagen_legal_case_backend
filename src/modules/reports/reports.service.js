@@ -1,13 +1,26 @@
 const prisma = require('../../config/db');
 
-exports.generate = async (userId, body) => {
+const getAgencyScope = (user) => {
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || String(user?.role || '').toLowerCase() === 'super_admin';
+  if (isSuperAdmin || !user?.agency_id) return null;
+  return parseInt(user.agency_id, 10);
+};
+
+exports.generate = async (userId, body, user) => {
   const { title, category, start_date, end_date } = body;
   const cat = String(category || '').toLowerCase();
+  const agencyId = getAgencyScope(user);
 
   const whereDate = {
     gte: new Date(start_date),
     lte: new Date(end_date)
   };
+
+  const invoiceAgency = agencyId ? { agency_id: agencyId } : {};
+  const matterAgency = agencyId ? { agency_id: agencyId } : {};
+  const leadAgency = agencyId ? { agency_id: agencyId } : {};
+  const timeEntryAgency = agencyId ? { matter: { agency_id: agencyId } } : {};
 
   const reportData = {
     leads: 0,
@@ -21,7 +34,8 @@ exports.generate = async (userId, body) => {
     const paidInvoices = await prisma.invoice.findMany({
       where: {
         status: 'paid',
-        updated_at: whereDate
+        updated_at: whereDate,
+        ...invoiceAgency
       },
       select: { amount: true }
     });
@@ -30,13 +44,14 @@ exports.generate = async (userId, body) => {
   else if (cat === 'operational') {
     // Matters + Hours
     const mattersCount = await prisma.matter.count({
-      where: { created_at: whereDate }
+      where: { created_at: whereDate, ...matterAgency }
     });
 
     const timers = await prisma.timeEntry.findMany({
       where: {
         start_time: whereDate,
-        is_running: false
+        is_running: false,
+        ...timeEntryAgency
       },
       select: { duration_minutes: true }
     });
@@ -49,20 +64,20 @@ exports.generate = async (userId, body) => {
   else if (cat === 'marketing') {
     // Leads only
     const leadsCount = await prisma.lead.count({
-      where: { created_at: whereDate }
+      where: { created_at: whereDate, ...leadAgency }
     });
     reportData.leads = leadsCount;
   } 
   else {
     // Fallback: All data
-    const leadsCount = await prisma.lead.count({ where: { created_at: whereDate } });
-    const mattersCount = await prisma.matter.count({ where: { created_at: whereDate } });
+    const leadsCount = await prisma.lead.count({ where: { created_at: whereDate, ...leadAgency } });
+    const mattersCount = await prisma.matter.count({ where: { created_at: whereDate, ...matterAgency } });
     const paidInvoices = await prisma.invoice.findMany({
-      where: { status: 'paid', updated_at: whereDate },
+      where: { status: 'paid', updated_at: whereDate, ...invoiceAgency },
       select: { amount: true }
     });
     const timers = await prisma.timeEntry.findMany({
-      where: { start_time: whereDate, is_running: false },
+      where: { start_time: whereDate, is_running: false, ...timeEntryAgency },
       select: { duration_minutes: true }
     });
 
@@ -88,8 +103,19 @@ exports.generate = async (userId, body) => {
   return report;
 };
 
-exports.list = async () => {
+exports.list = async (user) => {
+  const agencyId = getAgencyScope(user);
+  let where = {};
+  if (agencyId) {
+    const agencyUsers = await prisma.user.findMany({
+      where: { agency_id: agencyId },
+      select: { id: true }
+    });
+    const userIds = agencyUsers.map(u => u.id);
+    where = { created_by: { in: userIds } };
+  }
   return await prisma.report.findMany({
+    where,
     orderBy: { created_at: 'desc' }
   });
 };
@@ -100,12 +126,17 @@ exports.getById = async (id) => {
   });
 };
 
-exports.getMarketingStats = async () => {
+exports.getMarketingStats = async (user) => {
+  const agencyId = getAgencyScope(user);
+  const leadFilter = agencyId ? { agency_id: agencyId } : {};
+  const clientFilter = agencyId ? { agency_id: agencyId } : {};
+  const invoiceFilter = agencyId ? { agency_id: agencyId } : {};
+
   // Leads
-  const totalLeads = await prisma.lead.count();
+  const totalLeads = await prisma.lead.count({ where: leadFilter });
 
   // Clients
-  const totalClients = await prisma.client.count();
+  const totalClients = await prisma.client.count({ where: clientFilter });
 
   // Conversion Rate
   const conversionRate = totalLeads === 0
@@ -114,7 +145,7 @@ exports.getMarketingStats = async () => {
 
   // Revenue (Paid Invoices Total)
   const payments = await prisma.invoice.findMany({
-    where: { status: 'paid' },
+    where: { status: 'paid', ...invoiceFilter },
     select: { amount: true }
   });
 
@@ -123,6 +154,7 @@ exports.getMarketingStats = async () => {
   // Leads by source
   const leadsBySource = await prisma.lead.groupBy({
     by: ['source'],
+    where: leadFilter,
     _count: { id: true }
   });
 

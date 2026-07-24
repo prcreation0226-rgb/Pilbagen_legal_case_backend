@@ -61,13 +61,21 @@ const getById = async (id) => {
   return { ...rest, roles: userRoles, practice_focus: lawyer?.practice_focus || null };
 };
 
-const create = async (data) => {
+const create = async (data, currentUser) => {
   const salt = await bcrypt.genSalt(10);
   data.password_hash = await bcrypt.hash(data.password, salt);
   delete data.password;
   
   const { roles, practice_focus, ...userData } = data;
-  if (userData.agency_id) userData.agency_id = parseInt(userData.agency_id, 10);
+  const userRoles = (currentUser?.roles || []).map(r => String(r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || currentUser?.role === 'super_admin';
+  if (!isSuperAdmin && currentUser?.agency_id) {
+    userData.agency_id = parseInt(currentUser.agency_id, 10);
+  } else if (userData.agency_id) {
+    userData.agency_id = parseInt(userData.agency_id, 10);
+  } else {
+    userData.agency_id = 1;
+  }
   
   const validEnumRoles = ['admin', 'lawyer', 'client'];
   const primaryRole = (roles && roles.length > 0) ? roles[0].toLowerCase() : (data.role ? data.role.toLowerCase() : 'client');
@@ -115,10 +123,10 @@ const create = async (data) => {
   });
 
   if (!createdUser) return null;
-  const userRoles = createdUser.roles?.length > 0 ? createdUser.roles.map(r => r.role) : [createdUser.role];
+  const createdUserRoles = createdUser.roles?.length > 0 ? createdUser.roles.map(r => r.role) : [createdUser.role];
   const { password_hash, roles: _, lawyer, ...rest } = createdUser;
 
-  if (userRoles.includes('client')) {
+  if (createdUserRoles.includes('client')) {
     const admins = await prisma.user.findMany({
       where: { roles: { some: { role: 'admin' } } },
       select: { id: true }
@@ -135,10 +143,26 @@ const create = async (data) => {
     }
   }
 
-  return { ...rest, roles: userRoles, practice_focus: lawyer?.practice_focus || null };
+  return { ...rest, roles: createdUserRoles, practice_focus: lawyer?.practice_focus || null };
 };
 
-const update = async (id, data) => {
+const update = async (id, data, currentUser) => {
+  const targetId = parseInt(id, 10);
+  const targetUser = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!targetUser) {
+    const err = new Error('User not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const userRoles = (currentUser?.roles || []).map(r => String(r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || currentUser?.role === 'super_admin';
+  if (!isSuperAdmin && currentUser?.agency_id && targetUser.agency_id !== currentUser.agency_id) {
+    const err = new Error('Not authorized to modify this user');
+    err.statusCode = 403;
+    throw err;
+  }
+
   if (data.password) {
     const salt = await bcrypt.genSalt(10);
     data.password_hash = await bcrypt.hash(data.password, salt);
@@ -151,7 +175,7 @@ const update = async (id, data) => {
   }
   
   await prisma.user.update({
-    where: { id: parseInt(id) },
+    where: { id: targetId },
     data: userData,
   });
 
@@ -189,12 +213,28 @@ const update = async (id, data) => {
   });
 
   if (!updatedUser) return null;
-  const userRoles = updatedUser.roles?.length > 0 ? updatedUser.roles.map(r => r.role) : [updatedUser.role];
+  const updatedUserRoles = updatedUser.roles?.length > 0 ? updatedUser.roles.map(r => r.role) : [updatedUser.role];
   const { password_hash, roles: _, lawyer, ...rest } = updatedUser;
-  return { ...rest, roles: userRoles, practice_focus: lawyer?.practice_focus || null };
+  return { ...rest, roles: updatedUserRoles, practice_focus: lawyer?.practice_focus || null };
 };
 
-const resetPassword = async (id, newPassword) => {
+const resetPassword = async (id, newPassword, currentUser) => {
+  const targetId = parseInt(id, 10);
+  const targetUser = await prisma.user.findUnique({ where: { id: targetId } });
+  if (!targetUser) {
+    const err = new Error('User not found');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  const userRoles = (currentUser?.roles || []).map(r => String(r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || currentUser?.role === 'super_admin';
+  if (!isSuperAdmin && currentUser?.agency_id && targetUser.agency_id !== currentUser.agency_id) {
+    const err = new Error('Not authorized to reset password for this user');
+    err.statusCode = 403;
+    throw err;
+  }
+
   if (!newPassword || newPassword.length < 4) {
     const error = new Error('Password must be at least 4 characters');
     error.statusCode = 400;
@@ -203,7 +243,7 @@ const resetPassword = async (id, newPassword) => {
   const salt = await bcrypt.genSalt(10);
   const password_hash = await bcrypt.hash(newPassword, salt);
   await prisma.user.update({
-    where: { id: parseInt(id) },
+    where: { id: targetId },
     data: {
       password_hash,
       must_reset_password: false,
@@ -212,7 +252,7 @@ const resetPassword = async (id, newPassword) => {
   return { success: true };
 };
 
-const remove = async (id) => {
+const remove = async (id, currentUser) => {
   const userId = parseInt(id);
 
   // 1. Fetch user to ensure they exist
@@ -221,6 +261,14 @@ const remove = async (id) => {
     include: { client: true }
   });
   if (!targetUser) return null;
+
+  const userRoles = (currentUser?.roles || []).map(r => String(r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || currentUser?.role === 'super_admin';
+  if (!isSuperAdmin && currentUser?.agency_id && targetUser.agency_id !== currentUser.agency_id) {
+    const err = new Error('Not authorized to delete this user');
+    err.statusCode = 403;
+    throw err;
+  }
 
   // 2. Fetch all drafts created/updated by this user, or referencing their matters
   const userDrafts = await prisma.draft.findMany({

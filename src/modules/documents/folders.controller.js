@@ -2,7 +2,7 @@ const folderService = require('./folders.service');
 
 exports.getFolders = async (req, res) => {
   try {
-    const folders = await folderService.getAll(req.query);
+    const folders = await folderService.getAll(req.query, req.user);
     res.json({ success: true, data: folders });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

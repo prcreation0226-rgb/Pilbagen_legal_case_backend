@@ -1,11 +1,19 @@
+
+
 const prisma = require('../../config/db');
 
-const getAll = async (query) => {
+const getAll = async (query, user) => {
   const { status, matter_type, page = 1, limit = 10 } = query;
   
   const where = {};
   if (status) where.status = status;
   if (matter_type) where.matter_type = matter_type;
+
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || user?.role === 'super_admin';
+  if (!isSuperAdmin && user?.agency_id) {
+    where.agency_id = parseInt(user.agency_id, 10);
+  }
 
   const take = parseInt(limit);
   const skip = (parseInt(page) - 1) * take;
@@ -18,8 +26,8 @@ const getAll = async (query) => {
   });
 };
 
-const getById = async (id) => {
-  return await prisma.lead.findUnique({ 
+const getById = async (id, user) => {
+  const lead = await prisma.lead.findUnique({ 
     where: { id: parseInt(id) },
     include: {
       created_by: {
@@ -27,9 +35,26 @@ const getById = async (id) => {
       }
     }
   });
+  if (!lead) return null;
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || user?.role === 'super_admin';
+  if (!isSuperAdmin && user?.agency_id && lead.agency_id !== user.agency_id) {
+    const err = new Error('Not authorized to access this lead');
+    err.statusCode = 403;
+    throw err;
+  }
+  return lead;
 };
 
-const create = async (data) => {
+const create = async (data, user) => {
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || user?.role === 'super_admin';
+  if (!isSuperAdmin && user?.agency_id) {
+    data.agency_id = parseInt(user.agency_id, 10);
+  } else if (!data.agency_id) {
+    data.agency_id = 1;
+  }
+
   const lead = await prisma.lead.create({ data });
   
   // Log activity
@@ -122,7 +147,13 @@ const createFromPublicInquiry = async (body) => {
   });
 };
 
-const update = async (id, data) => {
+const update = async (id, data, user) => {
+  const existing = await getById(id, user);
+  if (!existing) {
+    const err = new Error('Lead not found');
+    err.statusCode = 404;
+    throw err;
+  }
   const lead = await prisma.lead.update({
     where: { id: parseInt(id) },
     data,
@@ -141,12 +172,18 @@ const update = async (id, data) => {
   return lead;
 };
 
-const remove = async (id) => {
+const remove = async (id, user) => {
+  const existing = await getById(id, user);
+  if (!existing) {
+    const err = new Error('Lead not found');
+    err.statusCode = 404;
+    throw err;
+  }
   return await prisma.lead.delete({ where: { id: parseInt(id) } });
 };
 
-const convertToClient = async (leadId, createdByUserId) => {
-  const lead = await prisma.lead.findUnique({ where: { id: parseInt(leadId) } });
+const convertToClient = async (leadId, createdByUserId, user) => {
+  const lead = await getById(leadId, user);
   
   if (!lead) throw new Error('Lead not found');
 
@@ -159,6 +196,7 @@ const convertToClient = async (leadId, createdByUserId) => {
         email: lead.email,
         phone: lead.phone,
         notes: `Converted from lead. Original message: ${lead.message}`,
+        agency_id: lead.agency_id,
       }
     });
 

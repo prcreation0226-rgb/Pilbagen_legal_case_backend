@@ -3,7 +3,7 @@ const prisma = require('../../config/db');
 /**
  * Perform a conflict of interest check across multiple entities
  */
-const checkConflict = async ({ prospectiveClient, opposingParty, userId }) => {
+const checkConflict = async ({ prospectiveClient, opposingParty, userId, user }) => {
   const pc = (prospectiveClient || '').trim().toLowerCase();
   const op = (opposingParty || '').trim().toLowerCase();
 
@@ -11,11 +11,19 @@ const checkConflict = async ({ prospectiveClient, opposingParty, userId }) => {
     throw new Error('At least one name is required for conflict check');
   }
 
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || String(user?.role || '').toLowerCase() === 'super_admin';
+  const agencyId = (!isSuperAdmin && user?.agency_id) ? parseInt(user.agency_id, 10) : null;
+
+  const agencyFilter = agencyId ? { agency_id: agencyId } : {};
+  const matterAgencyFilter = agencyId ? { matter: { agency_id: agencyId } } : {};
+
   const matches = [];
 
   // 1. Search Clients
   const clients = await prisma.client.findMany({
     where: {
+      ...agencyFilter,
       OR: [
         { full_name: { contains: pc } },
         { full_name: { contains: op } }
@@ -28,6 +36,7 @@ const checkConflict = async ({ prospectiveClient, opposingParty, userId }) => {
   // 2. Search Matters (Title, Opposing Party, or Client Name)
   const matters = await prisma.matter.findMany({
     where: {
+      ...agencyFilter,
       OR: [
         { title: { contains: pc } },
         { title: { contains: op } },
@@ -43,12 +52,13 @@ const checkConflict = async ({ prospectiveClient, opposingParty, userId }) => {
     type: 'matter', 
     id: m.id, 
     name: m.title, 
-    details: `Case #${m.matter_number} | Client: ${m.client.full_name} | Opposing: ${m.opposing_party_name || 'N/A'}` 
+    details: `Case #${m.matter_number} | Client: ${m.client?.full_name || 'N/A'} | Opposing: ${m.opposing_party_name || 'N/A'}` 
   }));
 
   // 3. Search Leads
   const leads = await prisma.lead.findMany({
     where: {
+      ...agencyFilter,
       OR: [
         { full_name: { contains: pc } },
         { full_name: { contains: op } },
@@ -63,6 +73,7 @@ const checkConflict = async ({ prospectiveClient, opposingParty, userId }) => {
   // 4. Search Communications
   const communications = await prisma.communication.findMany({
     where: {
+      ...matterAgencyFilter,
       OR: [
         { message_body: { contains: pc } },
         { message_body: { contains: op } }
@@ -73,8 +84,8 @@ const checkConflict = async ({ prospectiveClient, opposingParty, userId }) => {
   communications.forEach(com => matches.push({ 
     type: 'communication', 
     id: com.id, 
-    name: `Message in Matter ${com.matter.matter_number}`, 
-    details: com.message_body.substring(0, 100) + '...'
+    name: `Message in Matter ${com.matter?.matter_number || ''}`, 
+    details: (com.message_body || '').substring(0, 100) + '...'
   }));
 
   const hasConflict = matches.length > 0;
@@ -99,8 +110,15 @@ const checkConflict = async ({ prospectiveClient, opposingParty, userId }) => {
   };
 };
 
-const getAll = async (query) => {
+const getAll = async (query, user) => {
+  const userRoles = (user?.roles || []).map(r => String(r.role || r).toLowerCase());
+  const isSuperAdmin = userRoles.includes('super_admin') || String(user?.role || '').toLowerCase() === 'super_admin';
+  const agencyId = (!isSuperAdmin && user?.agency_id) ? parseInt(user.agency_id, 10) : null;
+
+  const where = agencyId ? { created_by: { agency_id: agencyId } } : {};
+
   return prisma.conflictCheck.findMany({
+    where,
     include: { created_by: { select: { full_name: true } } },
     orderBy: { created_at: 'desc' }
   });
